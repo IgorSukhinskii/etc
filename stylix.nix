@@ -2,7 +2,7 @@
 
 {
   stylix = {
-    enable = true;
+    enable = false;
 
     base16Scheme = "catppuccin-mocha";
 

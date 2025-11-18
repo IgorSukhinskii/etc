@@ -10,6 +10,7 @@
     "logi-options+"
     "alt-tab"
     "raycast"
+    "bitwarden"
   ];
 
   # Necessary for using flakes on this system.
