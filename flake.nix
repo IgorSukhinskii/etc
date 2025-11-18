@@ -7,7 +7,7 @@
     nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
-    stylix.url = "github:nix-community/stylix";
+    stylix.url = "github:konradmalik/stylix/fix-hm-integration-icons";
     stylix.inputs.nixpkgs.follows = "nixpkgs";
   };
 

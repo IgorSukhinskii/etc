@@ -46,7 +46,7 @@
     enable = true;
     package = pkgs.emptyDirectory; # Ghostty is installed via Homebrew in configuration.nix
     settings = {
-      theme = "Catppuccin Mocha";
+      theme = "Gruvbox Dark Hard";
       window-decoration = "none";
     };
   };
