@@ -44,10 +44,11 @@
 
   programs.ghostty = {
     enable = true;
-    package = pkgs.emptyDirectory; # Ghostty is installed via Homebrew in configuration.nix
+    package = pkgs.ghostty-bin;
     settings = {
       theme = "Gruvbox Dark Hard";
-      window-decoration = "none";
+      macos-titlebar-style = "hidden";
+      background-opacity = 0.9;
     };
   };
 
@@ -78,6 +79,10 @@
     viAlias = true;
     vimAlias = true;
     vimdiffAlias = true;
+  };
+
+  programs.zellij = {
+    enable = true;
   };
 
   programs.nix-your-shell = {

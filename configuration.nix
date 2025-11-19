@@ -6,7 +6,6 @@
 
   homebrew.enable = true;
   homebrew.casks = [
-    "ghostty"
     "logi-options+"
     "alt-tab"
     "raycast"
