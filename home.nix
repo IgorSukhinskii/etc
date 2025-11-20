@@ -20,6 +20,7 @@
   programs.home-manager.enable = true;
 
   home.packages = with pkgs; [
+    aldente
   ];
 
   home.shell.enableZshIntegration = true;
