@@ -41,6 +41,25 @@
   # Used for Homebrew
   system.primaryUser = "igor.sukhinskii";
 
+  # MacOS Settings
+  system.defaults.screencapture.location = "~/Pictures";
+  # Get as close to disabling Dock as possible
+  system.defaults.dock = {
+    autohide = true;
+    autohide-delay = 0.0;
+    launchanim = false;
+    mru-spaces = false;
+    orientation = "right";
+    persistent-apps = [];
+    persistent-others = [];
+    show-recents = false;
+    static-only = true;
+    wvous-bl-corner = 1;
+    wvous-br-corner = 1;
+    wvous-tl-corner = 1;
+    wvous-tr-corner = 1;
+  };
+
   # The platform the configuration will be used on.
   nixpkgs.hostPlatform = "aarch64-darwin";
   nixpkgs.config.allowUnfree = true;
