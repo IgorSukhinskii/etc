@@ -59,6 +59,37 @@
     wvous-tl-corner = 1;
     wvous-tr-corner = 1;
   };
+  system.defaults.finder = {
+    QuitMenuItem = true;
+    CreateDesktop = true;
+  };
+  system.defaults.hitoolbox.AppleFnUsageType = "Do Nothing";
+  system.defaults.NSGlobalDomain = {
+    "com.apple.keyboard.fnState" = true;
+    # _HIHideMenuBar = true;
+    AppleICUForce24HourTime = true;
+    AppleInterfaceStyle = "Dark";
+    AppleInterfaceStyleSwitchesAutomatically = false;
+    NSAutomaticCapitalizationEnabled = false;
+    NSAutomaticDashSubstitutionEnabled = false;
+    NSAutomaticInlinePredictionEnabled = false;
+    NSAutomaticPeriodSubstitutionEnabled = false;
+    NSAutomaticQuoteSubstitutionEnabled = false;
+    NSAutomaticSpellingCorrectionEnabled = false;
+    NSAutomaticWindowAnimationsEnabled = false;
+    NSDocumentSaveNewDocumentsToCloud = false;
+    NSUseAnimatedFocusRing = false;
+    NSWindowResizeTime = 0.0;
+  };
+  system.defaults.WindowManager = {
+    EnableStandardClickToShowDesktop = false;
+    StandardHideWidgets = true;
+    StandardHideDesktopIcons = true;
+  };
+  system.keyboard = {
+    enableKeyMapping = true;
+    swapLeftCtrlAndFn = true;
+  };
 
   # The platform the configuration will be used on.
   nixpkgs.hostPlatform = "aarch64-darwin";
