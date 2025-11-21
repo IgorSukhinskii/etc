@@ -20,7 +20,7 @@
   programs.home-manager.enable = true;
 
   home.packages = with pkgs; [
-    aldente
+    colima
   ];
 
   home.shell.enableZshIntegration = true;
@@ -28,6 +28,7 @@
   home.shellAliases = {
     rebuild = "sudo darwin-rebuild switch --flake ~/etc";
     v = "nvim";
+    docker = "nerdctl";
   };
 
   programs.zsh = {
@@ -47,7 +48,7 @@
     enable = true;
     package = pkgs.ghostty-bin;
     settings = {
-      theme = "Gruvbox Dark Hard";
+      # theme = "Gruvbox Dark Hard";
       macos-titlebar-style = "hidden";
       background-opacity = 0.9;
     };

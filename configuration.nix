@@ -4,13 +4,24 @@
   environment.systemPackages = with pkgs; [
   ];
 
-  homebrew.enable = true;
-  homebrew.casks = [
-    "logi-options+"
-    "alt-tab"
-    "raycast"
-    "bitwarden"
-  ];
+  homebrew = {
+    enable = true;
+    onActivation = {
+      autoUpdate = true;
+      cleanup = "zap";
+      upgrade = true;
+    };
+    taps = [
+      "mhaeuser/mhaeuser"
+    ];
+    casks = [
+      "logi-options+"
+      "alt-tab"
+      "raycast"
+      "bitwarden"
+      "battery-toolkit"
+    ];
+  };
 
   # Necessary for using flakes on this system.
   nix.settings.experimental-features = "nix-command flakes";
