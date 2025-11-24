@@ -85,6 +85,10 @@
       # additionalRuntimePaths = [ ./nvim ];
       viAlias = true;
       vimAlias = true;
+      clipboard = {
+        enable = true;
+        registers = "unnamed,unnamedplus";
+      };
       lsp = {
         enable = true;
       };
