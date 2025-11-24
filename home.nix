@@ -33,6 +33,9 @@
 
   programs.zsh = {
     enable = true;
+    sessionVariables = {
+      EDITOR = "nvim";
+    };
   };
 
   programs.git = {
@@ -78,11 +81,20 @@
   programs.nvf = {
     enable = true;
 
-    settings = {
-      vim.viAlias = true;
-      vim.vimAlias = true;
-      vim.lsp = {
+    settings.vim = {
+      # additionalRuntimePaths = [ ./nvim ];
+      viAlias = true;
+      vimAlias = true;
+      lsp = {
         enable = true;
+      };
+      telescope = {
+        enable = true;
+      };
+      binds = {
+        whichKey = {
+          enable = true;
+        };
       };
     };
   };
