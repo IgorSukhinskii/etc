@@ -15,7 +15,6 @@
       "mhaeuser/mhaeuser"
     ];
     casks = [
-      "logi-options+"
       "alt-tab"
       "raycast"
       "bitwarden"

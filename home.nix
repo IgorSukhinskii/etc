@@ -21,6 +21,7 @@
 
   home.packages = with pkgs; [
     colima
+    qmk
   ];
 
   home.shell.enableZshIntegration = true;
