@@ -35,7 +35,7 @@
           home-manager.sharedModules = [
             nvf.homeManagerModules.default
           ];
-          home-manager.users."igor.sukhinskii" = import ./home.nix;
+          home-manager.users."igor.sukhinskii" = import ./home/home.nix;
         }
         stylix.darwinModules.stylix
         ./stylix.nix

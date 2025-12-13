@@ -1,5 +1,18 @@
 { config, pkgs, ... }:
-
+let
+  jiraBin = "${pkgs.jira-cli-go}/bin/jira";
+  jiraWrapper = pkgs.writeShellScriptBin "jira" ''
+    set -euo pipefail
+    token="$(security find-generic-password -a "$USER" -s jira-api-token -w 2>/dev/null)" || {
+      echo "Keychain item 'jira-api-token' not found" >&2
+      exit 1
+    }
+    exec env \
+      JIRA_AUTH_TYPE="basic" \
+      JIRA_API_TOKEN="$token" \
+      "${jiraBin}" "$@"
+  '';
+in
 {
   # Home Manager needs a bit of information about you and the
   # paths it should manage.
@@ -21,7 +34,10 @@
 
   home.packages = with pkgs; [
     colima
+    docker
     qmk
+    jiraWrapper
+    ollama
   ];
 
   home.shell.enableZshIntegration = true;
@@ -29,7 +45,6 @@
   home.shellAliases = {
     rebuild = "sudo darwin-rebuild switch --flake ~/etc";
     v = "nvim";
-    docker = "nerdctl";
   };
 
   programs.zsh = {
@@ -103,17 +118,8 @@
       };
     };
   };
- #programs.neovim = {
- #  enable = true;
- #  defaultEditor = true;
- #  viAlias = true;
- #  vimAlias = true;
- #  vimdiffAlias = true;
- #};
 
-  programs.zellij = {
-    enable = true;
-  };
+  programs.zellij = import ./zellij/zellij.nix;
 
   programs.nix-your-shell = {
     enable = true;

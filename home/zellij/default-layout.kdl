@@ -1,0 +1,15 @@
+layout {
+  pane_template name="base" {
+    borderless true
+  }
+  tab name="workspace" split_direction="vertical" {
+    base split_direction="horizontal" {
+      base name="terminal"
+      base name="files" command="yazi"
+    }
+    base name="nvim" {
+      command "nvim"
+      focus true
+    }
+  }
+}
