@@ -38,6 +38,7 @@ in
     qmk
     jiraWrapper
     ollama
+    telegram-desktop
   ];
 
   home.shell.enableZshIntegration = true;
@@ -88,6 +89,20 @@ in
         ratio = [1 3 4];
       };
     };
+    initLua = ''
+      require("auto-layout").setup({
+        breakpoint_large = 80,  -- new large window threshold, defaults to 100
+        breakpoint_medium = 50,  -- new medium window threshold, defaults to 50
+      })
+    '';
+    plugins = {
+      auto-layout = pkgs.fetchFromGitHub {
+        owner = "luccahuguet";
+        repo = "auto-layout.yazi";
+        rev = "e24bee9f6dd15ff80eae1b3dc1a6b06ee7e66121";
+        hash = "sha256-4vRIGU/ArXhW9ervhyNhpfDN7UF4pqVYnxi6FExlgGk=";
+      };
+    };
   };
 
   programs.lsd = {
@@ -132,6 +147,8 @@ in
   programs.starship = {
     enable = true;
   };
+
+  programs.lazygit.enable = true;
 
   editorconfig = {
     enable = true;
