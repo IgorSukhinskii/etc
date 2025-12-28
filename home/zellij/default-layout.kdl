@@ -9,19 +9,19 @@ layout {
       plugin location="zellij:status-bar"
     }
   }
-  pane_template name="base" {
-    // borderless true
-  }
   tab name="workspace" split_direction="vertical" {
     pane split_direction="horizontal" {
-      base name="terminal"
-      base name="files" {
+      pane name="terminal"
+      pane name="files" {
         command "yazi"
       }
     }
-    base name="editor" {
-      command "nvim"
+    pane name="editor" {
+      command "$EDITOR"
       focus true
+    }
+    pane name="vcs" {
+      command "lazygit"
     }
   }
 }

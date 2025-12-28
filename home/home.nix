@@ -39,6 +39,7 @@ in
     jiraWrapper
     ollama
     telegram-desktop
+    brave
   ];
 
   home.shell.enableZshIntegration = true;
@@ -109,30 +110,7 @@ in
     enable = true;
   };
 
-  programs.nvf = {
-    enable = true;
-
-    settings.vim = {
-      # additionalRuntimePaths = [ ./nvim ];
-      viAlias = true;
-      vimAlias = true;
-      clipboard = {
-        enable = true;
-        registers = "unnamed,unnamedplus";
-      };
-      lsp = {
-        enable = true;
-      };
-      telescope = {
-        enable = true;
-      };
-      binds = {
-        whichKey = {
-          enable = true;
-        };
-      };
-    };
-  };
+  programs.nvf = import ./vim.nix;
 
   programs.zellij = import ./zellij/zellij.nix;
 
