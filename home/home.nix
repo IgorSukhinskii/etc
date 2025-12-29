@@ -136,7 +136,6 @@ in
     enable = true;
     settings = {
       git = {
-        externalDiffCommand = "difft --color=always";
         pagers = [ { externalDiffCommand = "difft --color=always"; } ];
       };
     };
