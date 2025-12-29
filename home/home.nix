@@ -40,6 +40,9 @@ in
     ollama
     telegram-desktop
     brave
+    nixd
+    nixfmt
+    difftastic
   ];
 
   home.shell.enableZshIntegration = true;
@@ -69,7 +72,6 @@ in
     enable = true;
     package = pkgs.ghostty-bin;
     settings = {
-      # theme = "Gruvbox Dark Hard";
       macos-titlebar-style = "hidden";
       background-opacity = 0.9;
     };
@@ -87,7 +89,11 @@ in
         sort_by = "mtime";
         sort_dir_first = true;
         sort_reverse = true;
-        ratio = [1 3 4];
+        ratio = [
+          1
+          3
+          4
+        ];
       };
     };
     initLua = ''
@@ -126,7 +132,15 @@ in
     enable = true;
   };
 
-  programs.lazygit.enable = true;
+  programs.lazygit = {
+    enable = true;
+    settings = {
+      git = {
+        externalDiffCommand = "difft --color=always";
+        pagers = [ { externalDiffCommand = "difft --color=always"; } ];
+      };
+    };
+  };
 
   editorconfig = {
     enable = true;

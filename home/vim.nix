@@ -5,8 +5,7 @@ let
     lsp.enable = true;
     treesitter.enable = true;
   };
-in
-{
+in {
   enable = true;
 
   settings.vim = {
@@ -31,8 +30,14 @@ in
       };
     };
     languages = {
-      nix = lang;
+      nix =
+        lang
+        // {
+          lsp.servers = ["nixd"];
+          format.type = ["nixfmt"];
+        };
       python = lang;
+      ts = lang;
     };
   };
 }
