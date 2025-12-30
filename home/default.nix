@@ -98,7 +98,7 @@ in
         ];
       };
     };
-    initLua = ''
+    initLua = /* lua */ ''
       require("auto-layout").setup({
         breakpoint_large = 80,  -- new large window threshold, defaults to 100
         breakpoint_medium = 50,  -- new medium window threshold, defaults to 50

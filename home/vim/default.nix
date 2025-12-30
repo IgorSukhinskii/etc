@@ -31,7 +31,18 @@ in
         };
       };
     };
-    luaConfigRC.telescope = builtins.readFile ./telescope.lua;
+    # These options are not in nvf yet, so we load them via lua
+    luaConfigRC.telescope = /* lua */ ''
+      require("telescope").setup({
+        defaults = {
+          layout_config = {
+            flip_columns = 120;
+            flip_lines = 40;
+            vertical = { preview_cutoff = 0 },
+          },
+        },
+      })
+    '';
     binds = {
       whichKey = {
         enable = true;
