@@ -31,7 +31,6 @@
       nvf,
     }:
     {
-
       # Build darwin flake using:
       # $ darwin-rebuild build --flake .#Igors-MacBook-Pro
       darwinConfigurations."Igors-MacBook-Pro" = nix-darwin.lib.darwinSystem {
@@ -44,7 +43,7 @@
             home-manager.sharedModules = [
               nvf.homeManagerModules.default
             ];
-            home-manager.users."igor.sukhinskii" = import ./home/home.nix;
+            home-manager.users."igor.sukhinskii" = import ./home;
           }
           stylix.darwinModules.stylix
           ./stylix.nix

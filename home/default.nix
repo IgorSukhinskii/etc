@@ -43,6 +43,8 @@ in
     nixd
     nixfmt
     difftastic
+    ripgrep
+    fd
   ];
 
   home.shell.enableZshIntegration = true;
@@ -116,9 +118,9 @@ in
     enable = true;
   };
 
-  programs.nvf = import ./vim.nix;
+  programs.nvf = import ./vim;
 
-  programs.zellij = import ./zellij/zellij.nix;
+  programs.zellij = import ./zellij;
 
   programs.nix-your-shell = {
     enable = true;
