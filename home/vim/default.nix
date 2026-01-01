@@ -23,6 +23,14 @@ in
       formatOnSave = true;
       lightbulb.enable = true;
     };
+    treesitter.enable = true;
+    autocomplete.blink-cmp = {
+      enable = true;
+      setupOpts = {
+        keymap.preset = "super-tab";
+        signature.enabled = true;
+      };
+    };
     telescope = {
       enable = true;
       setupOpts = {
@@ -60,5 +68,8 @@ in
       bash = lang;
       lua = lang;
     };
+    visuals.indent-blankline.enable = true;
+    ui.illuminate.enable = true;
+    ui.noice.enable = true;
   };
 }
