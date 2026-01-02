@@ -16,6 +16,7 @@ in
       enable = true;
       registers = "unnamed,unnamedplus";
     };
+    git.gitsigns.enable = true;
     statusline.lualine.enable = true;
     tabline.nvimBufferline.enable = true;
     lsp = {
@@ -51,6 +52,15 @@ in
         },
       })
     '';
+    filetree.nvimTree = {
+      enable = true;
+      mappings.toggle = "tt";
+      setupOpts = {
+        git.enable = true;
+        modified.enable = true;
+        renderer.highlight_git = true;
+      };
+    };
     binds = {
       whichKey = {
         enable = true;
@@ -69,6 +79,7 @@ in
       lua = lang;
     };
     visuals.indent-blankline.enable = true;
+    visuals.nvim-scrollbar.enable = true;
     ui.illuminate.enable = true;
     ui.noice.enable = true;
   };
