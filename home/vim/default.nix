@@ -55,10 +55,13 @@ in
     filetree.nvimTree = {
       enable = true;
       mappings.toggle = "tt";
+      openOnSetup = false;
       setupOpts = {
         git.enable = true;
         modified.enable = true;
         renderer.highlight_git = true;
+        renderer.icons.show.git = true;
+        update_focused_file.enable = true;
       };
     };
     binds = {
