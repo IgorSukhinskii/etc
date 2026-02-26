@@ -19,16 +19,18 @@
       "raycast"
       "bitwarden"
       "battery-toolkit"
+      "qmk-toolbox"
+      "vial"
     ];
   };
 
   # Necessary for using flakes on this system.
   nix.settings.experimental-features = "nix-command flakes";
-  # Because we are using Determinate Nix
-  # nix.enable = false;
 
-  # programs.zsh.enable = true;
-
+  nix.settings.trusted-users = [
+    "root"
+    "igor.sukhinskii"
+  ];
   # Set Git commit hash for darwin-version.
   # No idea how to do this with 'self' so commented out
   # system.configurationRevision = self.rev or self.dirtyRev or null;
@@ -49,8 +51,8 @@
     launchanim = false;
     mru-spaces = false;
     orientation = "right";
-    persistent-apps = [];
-    persistent-others = [];
+    persistent-apps = [ ];
+    persistent-others = [ ];
     show-recents = false;
     static-only = true;
     wvous-bl-corner = 1;
@@ -95,7 +97,10 @@
   nixpkgs.hostPlatform = "aarch64-darwin";
   nixpkgs.config.allowUnfree = true;
 
-  security.pam.services.sudo_local.touchIdAuth = true;
+  security.pam.services.sudo_local = {
+    touchIdAuth = true;
+    reattach = true;
+  };
   # User needs to be declared here because of home-manager (probably)
   users.users."igor.sukhinskii" = {
     name = "igor.sukhinskii";

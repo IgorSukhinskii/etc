@@ -11,6 +11,10 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nur = {
+      url = "github:nix-community/NUR";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     stylix = {
       url = "github:nix-community/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -18,6 +22,13 @@
     nvf = {
       url = "github:NotAShelf/nvf";
       inputs.nixpkgs.follows = "nixpkgs";
+    };
+    zen-browser = {
+      url = "github:0xc000022070/zen-browser-flake/beta";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        home-manager.follows = "home-manager";
+      };
     };
   };
 
@@ -27,8 +38,10 @@
       nix-darwin,
       nixpkgs,
       home-manager,
+      nur,
       stylix,
       nvf,
+      zen-browser,
     }:
     {
       # Build darwin flake using:
@@ -42,11 +55,13 @@
             home-manager.useUserPackages = true;
             home-manager.sharedModules = [
               nvf.homeManagerModules.default
+              zen-browser.homeModules.beta
             ];
             home-manager.users."igor.sukhinskii" = import ./home;
           }
           stylix.darwinModules.stylix
           ./stylix.nix
+          nur.modules.darwin.default
         ];
       };
     };

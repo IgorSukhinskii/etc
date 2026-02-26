@@ -14,8 +14,5 @@
         name = "JetBrainsMono";
       };
     };
-
-    # targets.nixos-icons.enable = false;
   };
 }
-

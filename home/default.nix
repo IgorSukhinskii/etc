@@ -35,6 +35,7 @@ in
   home.packages = with pkgs; [
     colima
     docker
+    devenv
     qmk
     jiraWrapper
     ollama
@@ -53,6 +54,11 @@ in
     rebuild = "sudo darwin-rebuild switch --flake ~/etc";
     v = "nvim";
   };
+
+  imports = [
+    ./vim
+    ./zen.nix
+  ];
 
   programs.zsh = {
     enable = true;
@@ -118,9 +124,16 @@ in
     enable = true;
   };
 
-  programs.nvf = import ./vim;
-
   programs.zellij = import ./zellij;
+  programs.tmux = {
+    enable = true;
+    keyMode = "vi";
+    mouse = true;
+    plugins = with pkgs.tmuxPlugins; [
+      tmux-which-key
+      prefix-highlight
+    ];
+  };
 
   programs.nix-your-shell = {
     enable = true;
@@ -132,6 +145,11 @@ in
 
   programs.starship = {
     enable = true;
+  };
+
+  programs.direnv = {
+    enable = true;
+    silent = true;
   };
 
   programs.lazygit = {
