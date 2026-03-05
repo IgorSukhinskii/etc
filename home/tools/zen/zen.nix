@@ -20,11 +20,13 @@
           {
             id,
             pinned ? false,
+            allowInPrivate ? false,
           }:
           let
             base = {
               install_url = mkPluginUrl id;
               installation_mode = "force_installed";
+              private_browsing = allowInPrivate; # allow extensions in private windows (policy override)
             };
           in
           if pinned then base // { default_area = "navbar"; } else base;
@@ -57,10 +59,12 @@
           "uBlock0@raymondhill.net" = mkExtensionEntry {
             id = "ublock-origin";
             pinned = true;
+            allowInPrivate = true;
           };
           "tridactyl.vim@cmcaine.co.uk" = mkExtensionEntry {
             id = "tridactyl-vim";
             pinned = true;
+            allowInPrivate = true;
           };
         };
         Preferences = mkLockedAttrs {
@@ -74,40 +78,38 @@
           "browser.newtabpage.activity-stream.feeds.topsites" = false;
           "browser.topsites.contile.enabled" = false;
 
-          # Turn OFF classic RFP (the one that forces light mode)
-          "privacy.resistFingerprinting" = false;
-          # Turn ON modern Fingerprinting Protection
-          "privacy.fingerprintingProtection" = true;
-          # Keep all FPP protections but DON'T tamper with CSS color-scheme
-          # (Zen/Firefox recent builds honor this override)
-          "privacy.fingerprintingProtection.overrides" = "+AllTargets,-CSSPrefersColorScheme";
-          "privacy.spoof_english" = 1;
-          "privacy.firstparty.isolate" = true;
-
-          "network.cookie.cookieBehavior" = 5;
-          "dom.battery.enabled" = false;
+          "network.cookie.cookieBehavior" = 5; # Total Cookie Protection (dFPI)
+          "dom.battery.enabled" = false; # hide Battery Status API (fingerprinting vector)
 
           "gfx.webrender.all" = true;
           "network.http.http3.enabled" = true;
-          "network.socket.ip_addr_any.disabled" = true; # disallow bind to 0.0.0.0
-
-          # Zen-specific preferences (moved from profiles.default.settings to avoid
-          # profile directory symlink conflicts causing "can't open after reboot")
-          "zen.workspaces.continue-where-left-off" = true;
-          "zen.view.compact.animate-sidebar" = false;
-          "zen.view.compact.enable-at-startup" = true;
-          "zen.view.compact.show-background-tab-toast" = false;
-          "zen.view.compact.show-sidebar-and-toolbar-on-hover" = false;
-          "zen.view.compact.toolbar-flash-popup" = false;
-          "zen.welcome-screen.seen" = true;
-          "full-screen-api.macos-native-full-screen" = false;
-          "zen.urlbar.show-domain-only-in-sidebar" = false;
+          "network.socket.ip_addr_any.disabled" = true; # block WebRTC 0.0.0.0 local IP leak
         };
       };
 
-    # Profile kept for search engines and stylix theme application only.
     profiles.default = {
-      path = "nk615yc5.Default (release)";
+      path = "default";
+
+      # user.js — applied unconditionally on startup (user-level, not locked)
+      settings = {
+        # Modern Fingerprinting Protection — does NOT force light mode
+        "privacy.fingerprintingProtection" = true;
+        # All FPP protections EXCEPT CSS color-scheme spoofing (preserves dark mode)
+        "privacy.fingerprintingProtection.overrides" = "+AllTargets,-CSSPrefersColorScheme";
+        # Silently spoof Accept-Language to en-US (language fingerprinting resistance)
+        "privacy.spoof_english" = 2;
+
+        # Zen-specific preferences (not policy targets, must be in user.js)
+        "zen.workspaces.continue-where-left-off" = true;
+        "zen.view.compact.animate-sidebar" = false;
+        "zen.view.compact.enable-at-startup" = true;
+        "zen.view.compact.show-background-tab-toast" = false;
+        "zen.view.compact.show-sidebar-and-toolbar-on-hover" = false;
+        "zen.view.compact.toolbar-flash-popup" = false;
+        "zen.welcome-screen.seen" = true;
+        "zen.urlbar.show-domain-only-in-sidebar" = false;
+        "full-screen-api.macos-native-full-screen" = false;
+      };
 
       search = {
         force = true;
