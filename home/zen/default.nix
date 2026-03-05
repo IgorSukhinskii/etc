@@ -1,5 +1,5 @@
 {
   imports = [
-    ./zellij.nix
+    ./zen.nix
   ];
 }

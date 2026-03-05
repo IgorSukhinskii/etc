@@ -21,6 +21,7 @@
       "battery-toolkit"
       "qmk-toolbox"
       "vial"
+      "claude-code"
     ];
   };
 
