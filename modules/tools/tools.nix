@@ -1,6 +1,7 @@
-{ pkgs, ... }:
+{ ... }:
 {
-  programs.bat = {
+  flake.homeManagerModules.tools = { pkgs, ... }: {
+    programs.bat = {
     enable = true;
   };
 
@@ -47,4 +48,5 @@
     telegram-desktop
     brave
   ];
+  };
 }

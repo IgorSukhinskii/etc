@@ -1,20 +1,23 @@
+{ ... }:
 {
-  lib,
-  pkgs,
-  config,
-  ...
-}:
+  flake.homeManagerModules.neovim =
+    {
+      lib,
+      pkgs,
+      config,
+      ...
+    }:
 
-let
-  lang = {
-    enable = true;
-    format.enable = true;
-    lsp.enable = true;
-    treesitter.enable = true;
-  };
-in
-{
-  programs.nvf = {
+    let
+      lang = {
+        enable = true;
+        format.enable = true;
+        lsp.enable = true;
+        treesitter.enable = true;
+      };
+    in
+    {
+      programs.nvf = {
     enable = true;
 
     settings.vim = {
@@ -109,5 +112,6 @@ in
       ui.illuminate.enable = true;
       ui.noice.enable = true;
     };
+  };
   };
 }
