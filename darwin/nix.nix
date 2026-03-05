@@ -1,9 +1,9 @@
-{ ... }:
+{ config, ... }:
 {
   nix.settings.experimental-features = "nix-command flakes";
   nix.settings.trusted-users = [
     "root"
-    "igor.sukhinskii"
+    config.host.username
   ];
   nixpkgs.hostPlatform = "aarch64-darwin";
   nixpkgs.config.allowUnfree = true;

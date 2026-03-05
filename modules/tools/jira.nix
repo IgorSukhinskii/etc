@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 let
   jiraBin = "${pkgs.jira-cli-go}/bin/jira";
   jiraWrapper = pkgs.writeShellScriptBin "jira" ''
@@ -13,6 +13,6 @@ let
       "${jiraBin}" "$@"
   '';
 in
-{
+lib.mkIf pkgs.stdenv.isDarwin {
   home.packages = [ jiraWrapper ];
 }

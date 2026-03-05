@@ -1,5 +1,5 @@
 {
-  description = "Igor's nix-darwin system flake";
+  description = "Igor's nix config";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -11,6 +11,8 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    import-tree.url = "github:vic/import-tree";
     stylix = {
       url = "github:nix-community/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -28,35 +30,28 @@
     };
   };
 
-  outputs =
-    inputs@{
-      self,
-      nix-darwin,
-      nixpkgs,
-      home-manager,
-      stylix,
-      nvf,
-      zen-browser,
-    }:
-    {
-      # Build darwin flake using:
-      # $ darwin-rebuild build --flake .#Igors-MacBook-Pro
-      darwinConfigurations."Igors-MacBook-Pro" = nix-darwin.lib.darwinSystem {
+  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+    systems = [ "aarch64-darwin" "x86_64-linux" ];
+
+    flake = {
+      darwinConfigurations.macbook = inputs.nix-darwin.lib.darwinSystem {
         modules = [
-          ./system
-          home-manager.darwinModules.home-manager
+          ./darwin
+          ./hosts/macbook/config.nix
+          inputs.home-manager.darwinModules.home-manager
           {
             home-manager.useGlobalPkgs = true;
             home-manager.useUserPackages = true;
             home-manager.sharedModules = [
-              nvf.homeManagerModules.default
-              zen-browser.homeModules.beta
+              inputs.nvf.homeManagerModules.default
+              inputs.zen-browser.homeModules.beta
+              # import-tree returns a single module { imports = [...all .nix files...]; }
+              (inputs.import-tree ./modules)
             ];
-            home-manager.users."igor.sukhinskii" = import ./home;
           }
-          stylix.darwinModules.stylix
-          ./stylix
         ];
+        specialArgs = { inherit inputs; };
       };
     };
+  };
 }

@@ -1,9 +1,9 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   programs.zen-browser = {
     enable = true;
 
-    darwinDefaultsId = "app.zen-browser.zen";
+    darwinDefaultsId = lib.mkIf pkgs.stdenv.isDarwin "app.zen-browser.zen";
 
     policies =
       let

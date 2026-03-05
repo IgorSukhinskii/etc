@@ -1,6 +1,6 @@
-{ ... }:
+{ config, ... }:
 {
-  system.primaryUser = "igor.sukhinskii";
+  system.primaryUser = config.host.username;
 
   system.defaults.screencapture.location = "~/Pictures";
 
