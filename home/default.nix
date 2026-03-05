@@ -1,8 +1,9 @@
 {
   imports = [
     ./home.nix
-    ./vim
-    ./zellij
-    ./zen
+    ./shell
+    ./term
+    ./dev
+    ./tools
   ];
 }

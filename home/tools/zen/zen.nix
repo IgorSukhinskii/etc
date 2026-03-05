@@ -90,22 +90,24 @@
           "gfx.webrender.all" = true;
           "network.http.http3.enabled" = true;
           "network.socket.ip_addr_any.disabled" = true; # disallow bind to 0.0.0.0
+
+          # Zen-specific preferences (moved from profiles.default.settings to avoid
+          # profile directory symlink conflicts causing "can't open after reboot")
+          "zen.workspaces.continue-where-left-off" = true;
+          "zen.view.compact.animate-sidebar" = false;
+          "zen.view.compact.enable-at-startup" = true;
+          "zen.view.compact.show-background-tab-toast" = false;
+          "zen.view.compact.show-sidebar-and-toolbar-on-hover" = false;
+          "zen.view.compact.toolbar-flash-popup" = false;
+          "zen.welcome-screen.seen" = true;
+          "full-screen-api.macos-native-full-screen" = false;
+          "zen.urlbar.show-domain-only-in-sidebar" = false;
         };
       };
 
+    # Profile kept for search engines and stylix theme application only.
     profiles.default = {
       path = "nk615yc5.Default (release)";
-      settings = {
-        "zen.workspaces.continue-where-left-off" = true;
-        "zen.view.compact.animate-sidebar" = false;
-        "zen.view.compact.enable-at-startup" = true;
-        "zen.view.compact.show-background-tab-toast" = false;
-        "zen.view.compact.show-sidebar-and-toolbar-on-hover" = false;
-        "zen.view.compact.toolbar-flash-popup" = false;
-        "zen.welcome-screen.seen" = true;
-        "full-screen-api.macos-native-full-screen" = false;
-        "zen.urlbar.show-domain-only-in-sidebar" = false;
-      };
 
       search = {
         force = true;

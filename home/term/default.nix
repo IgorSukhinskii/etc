@@ -1,0 +1,1 @@
+{ imports = [ ./term.nix ./zellij ]; }
