@@ -42,8 +42,9 @@
         };
       };
 
+      programs.ripgrep.enable = true;
+
       home.packages = with pkgs; [
-        ripgrep
         fd
         qmk
         telegram-desktop

@@ -24,7 +24,7 @@
         else
           echo "Not found: $module" >&2
           echo "Partial name matches in $hm/modules/programs/:" >&2
-          ls "$hm/modules/programs/" | grep -i "$name" >&2 || echo "(none)" >&2
+          ls "$hm/modules/programs/" | rg -i "$name" >&2 || echo "(none)" >&2
           exit 1
         fi
       '';
@@ -40,7 +40,7 @@
           || find /nix/store -maxdepth 1 -name "*nix-darwin*source*" -type d 2>/dev/null \
              | sort | tail -1)
 
-        result=$(find "$nd/modules" -iname "$name.nix" 2>/dev/null)
+        result=$(rg --files --iglob "*$name.nix" "$nd/modules" 2>/dev/null)
         if [[ -n "$result" ]]; then
           echo "$result"
         else
@@ -74,12 +74,11 @@
 
         echo "Searching in: $src"
         echo ""
-        find "$src" -name "$glob" -type f 2>/dev/null \
-          | xargs grep -l -E "$pattern" 2>/dev/null \
+        rg -l --glob "$glob" "$pattern" "$src" 2>/dev/null \
           | head -20 \
           | while read -r f; do
               echo "--- $f ---"
-              grep -n -E "$pattern" "$f" | head -10
+              rg -n "$pattern" "$f" | head -10
               echo ""
             done
       '';
@@ -97,6 +96,7 @@
     in
     {
       home.packages = with pkgs; [
+        ripgrep
         nixd
         nixfmt
         nixHmModule
