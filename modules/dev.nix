@@ -25,10 +25,12 @@
       programs.lazygit = {
         enable = true;
         settings = {
-          git.paging = {
-            colorArg = "always";
-            pager = "delta --paging=never";
-          };
+          git.pagers = [
+            {
+              colorArg = "always";
+              pager = "delta --paging=never";
+            }
+          ];
         };
       };
 

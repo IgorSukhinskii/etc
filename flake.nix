@@ -46,9 +46,9 @@
         (inputs.import-tree ./modules)
       ];
 
-      flake.darwinConfigurations.macbook = inputs.nix-darwin.lib.darwinSystem {
+      flake.darwinConfigurations.igors-mbp = inputs.nix-darwin.lib.darwinSystem {
         modules = (builtins.attrValues inputs.self.darwinModules) ++ [
-          ./hosts/macbook/config.nix
+          ./hosts/igors-mbp/config.nix
           inputs.home-manager.darwinModules.home-manager
           {
             home-manager.useGlobalPkgs = true;

@@ -6,7 +6,6 @@
       home.shell.enableZshIntegration = true;
 
       home.shellAliases = {
-        rebuild = "sudo darwin-rebuild switch --flake ~/etc";
         v = "nvim";
       };
 
