@@ -28,33 +28,38 @@
         home-manager.follows = "home-manager";
       };
     };
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } {
-    systems = [ "aarch64-darwin" "x86_64-linux" ];
+  outputs =
+    inputs:
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "aarch64-darwin"
+        "x86_64-linux"
+      ];
 
-    imports = [
-      (inputs.import-tree ./modules)
-    ];
+      imports = [
+        (inputs.import-tree ./modules)
+      ];
 
-    flake.darwinConfigurations.macbook = inputs.nix-darwin.lib.darwinSystem {
-      modules =
-        (builtins.attrValues inputs.self.darwinModules)
-        ++ [
+      flake.darwinConfigurations.macbook = inputs.nix-darwin.lib.darwinSystem {
+        modules = (builtins.attrValues inputs.self.darwinModules) ++ [
           ./hosts/macbook/config.nix
           inputs.home-manager.darwinModules.home-manager
           {
             home-manager.useGlobalPkgs = true;
             home-manager.useUserPackages = true;
-            home-manager.sharedModules =
-              (builtins.attrValues inputs.self.homeManagerModules)
-              ++ [
-                inputs.nvf.homeManagerModules.default
-                inputs.zen-browser.homeModules.beta
-              ];
+            home-manager.sharedModules = (builtins.attrValues inputs.self.homeManagerModules) ++ [
+              inputs.nvf.homeManagerModules.default
+              inputs.zen-browser.homeModules.beta
+            ];
           }
         ];
-      specialArgs = { inherit inputs; };
+        specialArgs = { inherit inputs; };
+      };
     };
-  };
 }
