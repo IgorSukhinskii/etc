@@ -59,6 +59,8 @@
         swapLeftCtrlAndFn = true;
       };
 
+      networking.hostName = "mac";
+
       security.pam.services.sudo_local = {
         touchIdAuth = true;
         reattach = true;

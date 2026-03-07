@@ -103,6 +103,10 @@
             };
           };
           luaConfigRC.schemastore = builtins.readFile ./schemastore.lua;
+          luaConfigRC.buffercycle = /* lua */ ''
+            vim.keymap.set("n", "<C-Tab>",   "<Cmd>BufferLineCycleNext<CR>", { desc = "Next buffer" })
+            vim.keymap.set("n", "<C-S-Tab>", "<Cmd>BufferLineCyclePrev<CR>", { desc = "Prev buffer" })
+          '';
           visuals.indent-blankline.enable = true;
           visuals.nvim-scrollbar.enable = true;
           ui.illuminate.enable = true;
