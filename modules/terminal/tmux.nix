@@ -19,6 +19,110 @@
         tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$selected"
         tmux switch-client -t "$name"
       '';
+      # builtins.fromJSON decodes \uXXXX at eval time, keeping source ASCII-safe
+      capL = builtins.fromJSON ''"\uE0B6"''; # left rounded half-circle
+      capR = builtins.fromJSON ''"\uE0B4"''; # right rounded half-circle
+      # Base16 ANSI slot semantics (hold across all Stylix themes)
+      bg = "colour0"; # base00 — terminal background (text on coloured pills)
+      yellow = "colour3"; # base0A — yellow/warm accent
+      blue = "colour4"; # base0D — blue/cool accent
+      fg = "colour7"; # base05 — terminal foreground (inactive/subtle pills)
+      # Rounded pill: capL + coloured fill + capR.
+      # Each #[attr] is a separate block — no commas in ternary branches,
+      # safe to embed in #{?client_prefix,...} without escaping.
+      pill =
+        {
+          color,
+          content,
+          bold ? false,
+        }:
+        "#[fg=${color}]#[bg=default]${capL}"
+        + "#[fg=${bg}]#[bg=${color}]"
+        + (if bold then "#[bold]" else "")
+        + "${content}"
+        + "#[fg=${color}]#[bg=default]"
+        + (if bold then "#[nobold]" else "")
+        + "${capR}";
+      timePillNormal = pill {
+        color = fg;
+        content = "%H:%M";
+      };
+      timePillPrefix = pill {
+        color = yellow;
+        content = "%H:%M";
+        bold = true;
+      };
+
+      terminalConfig = ''
+        set -g extended-keys on
+
+        # True color + image passthrough (sixel/kitty for ghostty)
+        set -as terminal-features ",ghostty:RGB"
+        set -g allow-passthrough on
+        set -ga update-environment TERM_PROGRAM
+      '';
+
+      keymapConfig = ''
+        # Ctrl+Tab / Ctrl+Shift+Tab to cycle windows without prefix
+        bind -n C-Tab   next-window
+        bind -n C-S-Tab previous-window
+
+        # Quick jump to named sessions (prefix + e/n)
+        bind e switch-client -t etc
+        bind n switch-client -t notes
+
+        # Copy-on-select (vi mode)
+        bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection-no-clear
+
+        # Pane split shortcuts preserving current path
+        bind | split-window -h -c "#{pane_current_path}"
+        bind - split-window -v -c "#{pane_current_path}"
+
+        # Session picker via sessionizer
+        bind s run-shell "sessionizer"
+
+        # which-key: source pre-built init file from the nix store directly.
+        # plugin.sh.tmux (the normal run-shell entry point) tries to cp files
+        # into the read-only nix store and exits via `set -e`, so Space binding
+        # is never registered. Sourcing init.example.tmux bypasses that entirely.
+        source-file ${whichKeyInit}
+      '';
+
+      statuslineConfig = ''
+        # Status bar on top with rounded-pill style
+        set -g status-position top
+        set -g status-left-length 40
+        set -g status-right-length 20
+        set -g status-interval 60
+
+        # Session pill: yellow background
+        set -g status-left '${
+          pill {
+            color = yellow;
+            content = " #S ";
+            bold = true;
+          }
+        }  ' # two-space separator at the end
+
+        # Window pills: inactive = fg (colour7), active = blue (colour4)
+        set -g window-status-separator ""
+        set -g window-status-format '${
+          pill {
+            color = fg;
+            content = "#I:#W";
+          }
+        } ' # one-space separator at the end
+        set -g window-status-current-format '${
+          pill {
+            color = blue;
+            content = "#I:#W";
+            bold = true;
+          }
+        } ' # one-space separator at the end
+
+        # Time pill: fg normally, yellow when prefix held
+        set -g status-right '#{?client_prefix,${timePillPrefix},${timePillNormal}}'
+      '';
     in
     {
       home.packages = [ sessionizer ];
@@ -33,41 +137,7 @@
         escapeTime = 0;
         terminal = "tmux-256color";
         plugins = [ ];
-        extraConfig = ''
-          set -g extended-keys on
-
-          # True color + image passthrough (sixel/kitty for ghostty)
-          set -as terminal-features ",ghostty:RGB"
-          set -g allow-passthrough on
-          set -ga update-environment TERM_PROGRAM
-
-          # Ctrl+Tab / Ctrl+Shift+Tab to cycle windows without prefix
-          bind -n C-Tab   next-window
-          bind -n C-S-Tab previous-window
-
-          # Quick jump to named sessions (prefix + e/n)
-          bind e switch-client -t etc
-          bind n switch-client -t notes
-
-          # Status bar: show prefix indicator (native, no plugin)
-          set -g status-right '#{?client_prefix,#[reverse] ^B #[noreverse] ,} %H:%M'
-
-          # Copy-on-select (vi mode)
-          bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection-no-clear
-
-          # Pane split shortcuts preserving current path
-          bind | split-window -h -c "#{pane_current_path}"
-          bind - split-window -v -c "#{pane_current_path}"
-
-          # Session picker via sessionizer
-          bind s run-shell "sessionizer"
-
-          # which-key: source pre-built init file from the nix store directly.
-          # plugin.sh.tmux (the normal run-shell entry point) tries to cp files
-          # into the read-only nix store and exits via `set -e`, so Space binding
-          # is never registered. Sourcing init.example.tmux bypasses that entirely.
-          source-file ${whichKeyInit}
-        '';
+        extraConfig = terminalConfig + keymapConfig + statuslineConfig;
       };
     };
 }
