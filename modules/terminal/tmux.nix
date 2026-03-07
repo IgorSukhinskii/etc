@@ -113,13 +113,13 @@
         set -g window-status-format '${
           pill {
             color = fg;
-            content = "#I:#W";
+            content = "#W";
           }
         } ' # one-space separator at the end
         set -g window-status-current-format '${
           pill {
             color = blue;
-            content = "#I:#W";
+            content = "#W";
             bold = true;
           }
         } ' # one-space separator at the end

@@ -1,21 +1,23 @@
 { inputs, ... }:
 {
-  flake.darwinModules.stylix = { pkgs, ... }: {
-    imports = [ inputs.stylix.darwinModules.stylix ];
+  flake.darwinModules.stylix =
+    { pkgs, ... }:
+    {
+      imports = [ inputs.stylix.darwinModules.stylix ];
 
-    stylix = {
-      enable = true;
+      stylix = {
+        enable = true;
 
-      autoEnable = true;
+        autoEnable = true;
 
-      base16Scheme = "${pkgs.base16-schemes}/share/themes/gruvbox-dark-hard.yaml";
+        base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
 
-      fonts = {
-        monospace = {
-          package = pkgs.jetbrains-mono;
-          name = "JetBrainsMono";
+        fonts = {
+          monospace = {
+            package = pkgs.jetbrains-mono;
+            name = "JetBrainsMono";
+          };
         };
       };
     };
-  };
 }
