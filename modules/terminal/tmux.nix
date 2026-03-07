@@ -54,6 +54,7 @@
       };
 
       terminalConfig = ''
+        set -g renumber-windows on
         set -g extended-keys on
 
         # True color + image passthrough (sixel/kitty for ghostty)
@@ -65,7 +66,7 @@
       keymapConfig = ''
         # Ctrl+Tab / Ctrl+Shift+Tab to cycle windows without prefix
         bind -n C-Tab   next-window
-        bind -n C-S-Tab previous-window
+        bind -n C-BTab  previous-window
 
         # Quick jump to named sessions (prefix + e/n)
         bind e switch-client -t etc
@@ -77,6 +78,9 @@
         # Pane split shortcuts preserving current path
         bind | split-window -h -c "#{pane_current_path}"
         bind - split-window -v -c "#{pane_current_path}"
+
+        # Reload config
+        bind r source-file ~/.config/tmux/tmux.conf \; display "config reloaded"
 
         # Session picker via sessionizer
         bind s run-shell "sessionizer"
