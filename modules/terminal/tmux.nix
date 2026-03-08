@@ -94,10 +94,10 @@
 
       terminalConfig = ''
         set -g renumber-windows on
-        set -g extended-keys on
+        set -g extended-keys always
 
         # True color + image passthrough (sixel/kitty for ghostty)
-        set -as terminal-features ",ghostty:RGB"
+        set -as terminal-features ",xterm-ghostty:RGB:extkeys"
         set -g allow-passthrough on
         set -ga update-environment TERM_PROGRAM
       '';
