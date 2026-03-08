@@ -8,6 +8,7 @@
         package = pkgs.ghostty-bin;
         settings = {
           macos-titlebar-style = "hidden";
+          macos-option-as-alt = "left";
           background-opacity = 0.9;
           # ghostty `unbind` removes its own action but macOS text-input has no
           # terminal encoding for Ctrl+Tab, so the key is silently dropped.

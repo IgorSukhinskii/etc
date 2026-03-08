@@ -101,6 +101,11 @@
             json = lang // {
               lsp.servers = [ "jsonls" ];
             };
+            nu = {
+              enable = true;
+              lsp.enable = true;
+              treesitter.enable = true;
+            };
           };
           luaConfigRC.schemastore = builtins.readFile ./schemastore.lua;
           luaConfigRC.buffercycle = /* lua */ ''

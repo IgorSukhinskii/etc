@@ -10,6 +10,45 @@
               ${pkgs.tmuxPlugins.tmux-which-key}/share/tmux-plugins/tmux-which-key/plugin/init.example.tmux \
               > $out
           '';
+      paneCenterScript = pkgs.writeScriptBin "tmux-pane-center" /* nu */ ''
+        #!${pkgs.nushell}/bin/nu
+        def main [] {
+          let pane_id = (^tmux display -p '#{pane_id}')
+          let panes = (
+            ^tmux list-panes -F '#{pane_left} #{pane_id}'
+            | lines
+            | parse "{left} {id}"
+            | sort-by { |r| $r.left | into int }
+            | get id
+          )
+          let n = ($panes | length)
+          let center = $n // 2
+          let pos = ($panes | enumerate | where { |e| $e.item == $pane_id } | first | get index)
+          let delta = $pos - $center
+          for _ in 0..<($delta | math abs) {
+            if $delta > 0 { ^tmux rotate-window -U } else { ^tmux rotate-window -D }
+          }
+          ^tmux select-pane -t $pane_id
+        }
+      '';
+      paneNavScript = pkgs.writeScriptBin "tmux-nav" /* nu */ ''
+        #!${pkgs.nushell}/bin/nu
+        def main [dir: string] {
+          let panes = (
+            ^tmux list-panes -F '#{pane_left} #{pane_id}'
+            | lines
+            | parse "{left} {id}"
+            | sort-by { |r| $r.left | into int }
+            | get id
+          )
+          let n = ($panes | length)
+          let current = (^tmux display -p '#{pane_id}')
+          let pos = ($panes | enumerate | where { |e| $e.item == $current } | first | get index)
+          let new_pos = if $dir == "D" { ($pos + 1) mod $n } else { ($pos - 1 + $n) mod $n }
+          ^tmux select-pane -t ($panes | get $new_pos)
+          tmux-pane-center
+        }
+      '';
       sessionizer = pkgs.writeShellScriptBin "sessionizer" ''
         selected=$(printf '%s\n' ~/etc ~/vault \
           $(find ~/code -maxdepth 1 -mindepth 1 -type d 2>/dev/null) \
@@ -83,7 +122,21 @@
         bind r source-file ~/.config/tmux/tmux.conf \; display "config reloaded"
 
         # Session picker via sessionizer
-        bind s run-shell "sessionizer"
+        # bind s run-shell "sessionizer"
+
+        # Ring-buffer pane navigation (wrapping, auto-centers)
+        bind -n M-j run-shell "tmux-nav D"
+        bind -n M-k run-shell "tmux-nav U"
+
+        # Window scrolling (horizontal axis)
+        bind -n M-h previous-window
+        bind -n M-l next-window
+
+        # Center current pane without moving (e.g. after mouse click)
+        bind -n M-Space run-shell "tmux-pane-center"
+
+        # Zoom/focus toggle
+        bind -n M-z resize-pane -Z
 
         # which-key: source pre-built init file from the nix store directly.
         # plugin.sh.tmux (the normal run-shell entry point) tries to cp files
@@ -129,7 +182,12 @@
       '';
     in
     {
-      home.packages = [ sessionizer ];
+      home.packages = [
+        sessionizer
+        paneCenterScript
+        paneNavScript
+        pkgs.nushell
+      ];
 
       programs.fzf.enable = true;
 
