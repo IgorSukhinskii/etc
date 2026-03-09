@@ -54,7 +54,7 @@
 
       terminalConfig = ''
         set -g renumber-windows on
-        set -g extended-keys always
+        set -g extended-keys on
         set -g focus-events on
 
         # True color + image passthrough (sixel/kitty for ghostty)
@@ -88,7 +88,7 @@
         bind r source-file ~/.config/tmux/tmux.conf \; display "config reloaded"
 
         # Session picker via sessionizer
-        # bind s run-shell "sessionizer"
+        bind C-s run-shell "sessionizer"
 
         # Ring-buffer pane navigation (wrapping, auto-centers)
         bind -n M-j run-shell "tmux-nav D"
@@ -100,10 +100,6 @@
 
         # Center current pane without moving (e.g. after mouse click)
         bind -n M-Space run-shell "tmux-pane-center"
-
-        # Shift+Space → plain space (extended-keys always makes Ghostty send KKP
-        # \e[32;2u for S-Space; intercept it here so apps just see a space)
-        bind -n S-Space send-keys " "
 
         # Zoom/focus toggle
         bind -n M-z resize-pane -Z
