@@ -102,6 +102,10 @@
         # Center current pane without moving (e.g. after mouse click)
         bind -n M-Space run-shell "tmux-pane-center"
 
+        # Shift+Space → plain space (extended-keys always makes Ghostty send KKP
+        # \e[32;2u for S-Space; intercept it here so apps just see a space)
+        bind -n S-Space send-keys " "
+
         # Zoom/focus toggle
         bind -n M-z resize-pane -Z
 
