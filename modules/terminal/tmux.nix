@@ -10,45 +10,12 @@
               ${pkgs.tmuxPlugins.tmux-which-key}/share/tmux-plugins/tmux-which-key/plugin/init.example.tmux \
               > $out
           '';
-      paneCenterScript = pkgs.writeScriptBin "tmux-pane-center" /* nu */ ''
-        #!${pkgs.nushell}/bin/nu
-        def main [] {
-          let pane_id = (^tmux display -p '#{pane_id}')
-          let panes = (
-            ^tmux list-panes -F '#{pane_left} #{pane_id}'
-            | lines
-            | parse "{left} {id}"
-            | sort-by { |r| $r.left | into int }
-            | get id
-          )
-          let n = ($panes | length)
-          let center = $n // 2
-          let pos = ($panes | enumerate | where { |e| $e.item == $pane_id } | first | get index)
-          let delta = $pos - $center
-          for _ in 0..<($delta | math abs) {
-            if $delta > 0 { ^tmux rotate-window -U } else { ^tmux rotate-window -D }
-          }
-          ^tmux select-pane -t $pane_id
-        }
-      '';
-      paneNavScript = pkgs.writeScriptBin "tmux-nav" /* nu */ ''
-        #!${pkgs.nushell}/bin/nu
-        def main [dir: string] {
-          let panes = (
-            ^tmux list-panes -F '#{pane_left} #{pane_id}'
-            | lines
-            | parse "{left} {id}"
-            | sort-by { |r| $r.left | into int }
-            | get id
-          )
-          let n = ($panes | length)
-          let current = (^tmux display -p '#{pane_id}')
-          let pos = ($panes | enumerate | where { |e| $e.item == $current } | first | get index)
-          let new_pos = if $dir == "D" { ($pos + 1) mod $n } else { ($pos - 1 + $n) mod $n }
-          ^tmux select-pane -t ($panes | get $new_pos)
-          tmux-pane-center
-        }
-      '';
+      paneCenterScript = pkgs.writeScriptBin "tmux-pane-center" (
+        "#!${pkgs.nushell}/bin/nu\n" + builtins.readFile ./tmux-pane-center.nu
+      );
+      paneNavScript = pkgs.writeScriptBin "tmux-nav" (
+        "#!${pkgs.nushell}/bin/nu\n" + builtins.readFile ./tmux-nav.nu
+      );
       sessionizer = pkgs.writeShellScriptBin "sessionizer" ''
         selected=$(printf '%s\n' ~/etc ~/vault \
           $(find ~/code -maxdepth 1 -mindepth 1 -type d 2>/dev/null) \
