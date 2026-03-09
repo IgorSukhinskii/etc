@@ -64,6 +64,11 @@
       '';
 
       keymapConfig = ''
+        # Change prefix from Ctrl-b to Ctrl-a
+        unbind C-b
+        set -g prefix C-a
+        bind-key C-a send-prefix
+
         # Ctrl+Tab / Ctrl+Shift+Tab to cycle windows without prefix
         bind -n C-Tab   next-window
         bind -n C-BTab  previous-window
