@@ -3,13 +3,6 @@
   flake.homeManagerModules.tmux =
     { pkgs, ... }:
     let
-      whichKeyInit =
-        pkgs.runCommand "tmux-which-key-init-quiet" { nativeBuildInputs = [ pkgs.ripgrep ]; }
-          ''
-            rg -v '^display -p.*\[tmux-which-key\]' \
-              ${pkgs.tmuxPlugins.tmux-which-key}/share/tmux-plugins/tmux-which-key/plugin/init.example.tmux \
-              > $out
-          '';
       paneCenterScript = pkgs.writeScriptBin "tmux-pane-center" (
         "#!${pkgs.nushell}/bin/nu\n" + builtins.readFile ./tmux-pane-center.nu
       );
@@ -62,6 +55,7 @@
       terminalConfig = ''
         set -g renumber-windows on
         set -g extended-keys always
+        set -g focus-events on
 
         # True color + image passthrough (sixel/kitty for ghostty)
         set -as terminal-features ",xterm-ghostty:RGB:extkeys"
@@ -108,12 +102,6 @@
 
         # Zoom/focus toggle
         bind -n M-z resize-pane -Z
-
-        # which-key: source pre-built init file from the nix store directly.
-        # plugin.sh.tmux (the normal run-shell entry point) tries to cp files
-        # into the read-only nix store and exits via `set -e`, so Space binding
-        # is never registered. Sourcing init.example.tmux bypasses that entirely.
-        source-file ${whichKeyInit}
       '';
 
       statuslineConfig = ''
@@ -160,8 +148,6 @@
         pkgs.nushell
       ];
 
-      programs.fzf.enable = true;
-
       programs.tmux = {
         enable = true;
         keyMode = "vi";
@@ -169,7 +155,6 @@
         baseIndex = 1;
         escapeTime = 0;
         terminal = "tmux-256color";
-        plugins = [ ];
         extraConfig = terminalConfig + keymapConfig + statuslineConfig;
       };
     };
