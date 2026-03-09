@@ -1,5 +1,12 @@
 { ... }:
 {
+  flake.darwinModules.claude =
+    { ... }:
+    {
+      homebrew.casks = [
+        "claude-code"
+      ];
+    };
   flake.homeManagerModules.claude =
     { pkgs, ... }:
     let
