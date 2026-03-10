@@ -3,13 +3,11 @@
   flake.homeManagerModules.tools =
     { pkgs, ... }:
     {
-      programs.bat = {
-        enable = true;
-      };
+      programs.bat.enable = true;
 
-      programs.lsd = {
-        enable = true;
-      };
+      programs.fd.enable = true;
+
+      programs.lsd.enable = true;
 
       programs.yazi = {
         enable = true;
@@ -45,7 +43,6 @@
       programs.ripgrep.enable = true;
 
       home.packages = with pkgs; [
-        fd
         qmk
         telegram-desktop
         brave
