@@ -1,0 +1,44 @@
+(defcfg
+  process-unmapped-keys yes)
+
+(defsrc
+  ;; fn row (top of keyboard)
+  f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12
+  ;; number row
+  nubs  1    2    3    4    5    6    7    8    9    0    min  eql  bspc
+  ;; QWERTY row
+  tab  q    w    e    r    t    y    u    i    o    p    lbrc rbrc
+  ;; home row — bksl: backslash key (ISO: physically between apostrophe and return)
+  caps a    s    d    f    g    h    j    k    l    scln apos bksl ret
+  ;; shift row — nubs: ISO \ key between left-shift and z
+  lsft grv  z    x    c    v    b    n    m    comm Period  Slash rsft
+  ;; bottom row (fn is the bottom-left physical key on MacBook)
+  fn   lctl lalt lmet           spc            rmet ralt
+  ;; arrow cluster
+  left down up   rght)
+
+;; F1-F12 emit media functions directly
+;; (VirtualHIDDevice bypasses macOS fnState translation; explicit mapping required)
+(deflayer base
+  brdn brup f3   f4   bldn blup prev pp   next mute vold volu
+  grv  _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    _    _    _    _    _    _    _
+  @cap _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    nubs _    _    _    _    _    _    _    _    _    _    _
+  lctl @fnl _    _              _              _    _
+  _    _    _    _)
+
+;; Held lctl (fn position on keyboard) activates fn layer:
+;; arrows → Home/End/PgUp/PgDn, bspc → Del, F-keys → actual F1-F12
+(deflayer fn
+  f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12
+  _    _    _    _    _    _    _    _    _    _    _    _    _    del
+  _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    _    _    _    _    _    _    _
+  _    @fnl _    _              _              _    _
+  home pgdn pgup end)
+
+(defalias
+  fnl (layer-while-held fn)
+  cap (tap-hold 200 200 esc (multi lctl lmet lalt lsft)))

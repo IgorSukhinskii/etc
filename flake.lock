@@ -176,6 +176,24 @@
         "type": "github"
       }
     },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
     "fromYaml": {
       "flake": false,
       "locked": {
@@ -286,6 +304,49 @@
       "original": {
         "owner": "vic",
         "repo": "import-tree",
+        "type": "github"
+      }
+    },
+    "kanata-darwin": {
+      "inputs": {
+        "kanata-tray": "kanata-tray",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1772838952,
+        "narHash": "sha256-gDihFmj6HiQqmVMR7+8bPi0y1oXi8pz40V4rqGqjgYc=",
+        "owner": "not-in-stock",
+        "repo": "kanata-darwin",
+        "rev": "b3ffd5043390f133348fc6fcd0ea97f8f51c5658",
+        "type": "github"
+      },
+      "original": {
+        "owner": "not-in-stock",
+        "repo": "kanata-darwin",
+        "type": "github"
+      }
+    },
+    "kanata-tray": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": [
+          "kanata-darwin",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1767299040,
+        "narHash": "sha256-UoalsSTJwzgtWj1lfsc61NxgDJOsnxVOD+A17+o5yKA=",
+        "owner": "rszyma",
+        "repo": "kanata-tray",
+        "rev": "3903d3d432daf793e0ec4d7b3c4f50481f6ace55",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rszyma",
+        "repo": "kanata-tray",
         "type": "github"
       }
     },
@@ -424,7 +485,7 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "systems": "systems"
+        "systems": "systems_2"
       },
       "locked": {
         "lastModified": 1765521367,
@@ -446,6 +507,7 @@
         "git-hooks": "git-hooks",
         "home-manager": "home-manager",
         "import-tree": "import-tree",
+        "kanata-darwin": "kanata-darwin",
         "nix-darwin": "nix-darwin",
         "nixpkgs": "nixpkgs",
         "nvf": "nvf",
@@ -466,7 +528,7 @@
           "nixpkgs"
         ],
         "nur": "nur",
-        "systems": "systems_2",
+        "systems": "systems_3",
         "tinted-foot": "tinted-foot",
         "tinted-kitty": "tinted-kitty",
         "tinted-schemes": "tinted-schemes",
@@ -503,6 +565,21 @@
       }
     },
     "systems_2": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "systems_3": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",

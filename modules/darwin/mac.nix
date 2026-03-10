@@ -31,7 +31,6 @@
       system.defaults.hitoolbox.AppleFnUsageType = "Do Nothing";
 
       system.defaults.NSGlobalDomain = {
-        "com.apple.keyboard.fnState" = true;
         AppleICUForce24HourTime = true;
         AppleInterfaceStyle = "Dark";
         AppleInterfaceStyleSwitchesAutomatically = false;
@@ -55,8 +54,7 @@
 
       system.keyboard = {
         enableKeyMapping = true;
-        remapCapsLockToEscape = true;
-        swapLeftCtrlAndFn = true;
+        # ctrl↔fn swap handled by kanata (avoids hidutil double-processing kanata's virtual output)
       };
 
       networking.hostName = "mac";
