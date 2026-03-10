@@ -90,6 +90,9 @@
         # Session picker via sessionizer
         bind C-s run-shell "sessionizer"
 
+        # Workspace layout (create standard windows)
+        bind C-w run-shell "tmux-layout"
+
         # Ring-buffer pane navigation (wrapping, auto-centers)
         bind -n M-j run-shell "tmux-nav D"
         bind -n M-k run-shell "tmux-nav U"
