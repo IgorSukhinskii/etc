@@ -1,9 +1,12 @@
 { inputs, ... }:
 {
-  imports = [ inputs.git-hooks.flakeModule ];
-
   flake.homeManagerModules.nix-dev =
-    { pkgs, config, ... }:
+    {
+      pkgs,
+      lib,
+      config,
+      ...
+    }:
     let
       flakeDir = "${config.home.homeDirectory}/etc";
 
@@ -93,6 +96,19 @@
 
         exec sudo darwin-rebuild switch --flake "''${flake_dir}#''${hostname}"
       '';
+
+      nixfmtHook = pkgs.writeShellScript "pre-commit-nixfmt" ''
+        set -eo pipefail
+        staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.nix$' || true)
+        [ -z "$staged" ] && exit 0
+        ${pkgs.nixfmt}/bin/nixfmt $staged
+        changed=$(git diff --name-only $staged)
+        if [ -n "$changed" ]; then
+          echo "nixfmt: reformatted files, please git add and re-commit:"
+          printf '%s\n' $changed
+          exit 1
+        fi
+      '';
     in
     {
       home.packages = with pkgs; [
@@ -119,14 +135,10 @@
         };
         treesitter.enable = true;
       };
-    };
 
-  perSystem =
-    { config, pkgs, ... }:
-    {
-      pre-commit.settings.hooks.nixfmt.enable = true;
-      devShells.default = pkgs.mkShell {
-        shellHook = config.pre-commit.shellHook;
-      };
+      home.activation.installNixfmtHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        $DRY_RUN_CMD mkdir -p "${flakeDir}/.git/hooks"
+        $DRY_RUN_CMD ln -sf ${nixfmtHook} "${flakeDir}/.git/hooks/pre-commit"
+      '';
     };
 }
