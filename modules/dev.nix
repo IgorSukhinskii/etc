@@ -10,6 +10,12 @@
           user.email = "igor.sukhinskii@mirasys.com";
           init.defaultBranch = "main";
         };
+        includes = [
+          {
+            condition = "gitdir:~/projects/";
+            contents.user.email = "igor.sukhinskii@gmail.com";
+          }
+        ];
       };
 
       programs.delta = {
