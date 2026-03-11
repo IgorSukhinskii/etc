@@ -7,13 +7,17 @@
         enable = true;
         settings = {
           user.name = "Igor Sukhinskii";
-          user.email = "igor.sukhinskii@mirasys.com";
+          user.email = "igor.sukhinskii@gmail.com";
           init.defaultBranch = "main";
         };
         includes = [
           {
-            condition = "gitdir:~/projects/";
-            contents.user.email = "igor.sukhinskii@gmail.com";
+            condition = "hasconfig:remote.*.url:*visualstudio.com*/**";
+            contents.user.email = "igor.sukhinskii@mirasys.com";
+          }
+          {
+            condition = "hasconfig:remote.*.url:*dev.azure.com*/**";
+            contents.user.email = "igor.sukhinskii@mirasys.com";
           }
         ];
       };
