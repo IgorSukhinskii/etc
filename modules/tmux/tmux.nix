@@ -1,7 +1,7 @@
 { ... }:
 {
   flake.homeManagerModules.tmux =
-    { pkgs, ... }:
+    { pkgs, config, ... }:
     let
       paneCenterScript = pkgs.writeScriptBin "tmux-pane-center" (
         "#!${pkgs.nushell}/bin/nu\n" + builtins.readFile ./tmux-pane-center.nu
@@ -21,27 +21,68 @@
       # builtins.fromJSON decodes \uXXXX at eval time, keeping source ASCII-safe
       capL = builtins.fromJSON ''"\uE0B6"''; # left rounded half-circle
       capR = builtins.fromJSON ''"\uE0B4"''; # right rounded half-circle
-      # Base16 ANSI slot semantics (hold across all Stylix themes)
-      bg = "colour0"; # base00 — terminal background (text on coloured pills)
-      yellow = "colour3"; # base0A — yellow/warm accent
-      blue = "colour4"; # base0D — blue/cool accent
-      fg = "colour7"; # base05 — terminal foreground (inactive/subtle pills)
-      # Rounded pill: capL + coloured fill + capR.
-      # Each #[attr] is a separate block — no commas in ternary branches,
-      # safe to embed in #{?client_prefix,...} without escaping.
+      # Base16 hex colors from Stylix — all 16 available, theme-safe.
+      # config.lib.stylix.colors.baseXX returns hex without '#' (e.g. "1e1e2e").
+      c = config.lib.stylix.colors;
+      bg = "#${c.base00}"; # terminal background
+      fgDim = "#${c.base04}"; # dark foreground / Surface2
+      fg = "#${c.base05}"; # default foreground
+      yellow = "#${c.base0A}";
+      blue = "#${c.base0D}";
+      # (omitting red/orange/brown — add if needed)
+      # Primitive: left cap + content on `color` bg, then reset to default.
+      # Standalone-safe (resets bg after content) and composable (pillRight overrides bg next).
+      pillLeft =
+        {
+          color,
+          content,
+          bold ? false,
+          textColor ? bg,
+        }:
+        "#[fg=${color}]#[bg=default]${capL}"
+        + "#[fg=${textColor}]#[bg=${color}]"
+        + (if bold then "#[bold]" else "")
+        + content
+        + "#[fg=${color}]#[bg=default]"
+        + (if bold then "#[nobold]" else "");
+
+      # Primitive: set `color` bg + content + right cap.
+      # When placed immediately after pillLeft, the bg override creates the visual split.
+      pillRight =
+        {
+          color,
+          content,
+          bold ? false,
+          textColor ? bg,
+        }:
+        "#[fg=${textColor}]#[bg=${color}]"
+        + (if bold then "#[bold]" else "")
+        + content
+        + "#[fg=${color}]#[bg=default]"
+        + (if bold then "#[nobold]" else "")
+        + capR;
+
+      # Single-color rounded pill — backward-compatible, built from primitives.
+      # pillLeft resets to default; pillRight re-sets same color, creating a seamless pill.
       pill =
         {
           color,
           content,
           bold ? false,
+          textColor ? bg,
         }:
-        "#[fg=${color}]#[bg=default]${capL}"
-        + "#[fg=${bg}]#[bg=${color}]"
-        + (if bold then "#[bold]" else "")
-        + "${content}"
-        + "#[fg=${color}]#[bg=default]"
-        + (if bold then "#[nobold]" else "")
-        + "${capR}";
+        pillLeft {
+          inherit color bold;
+          content = "";
+        }
+        + pillRight {
+          inherit
+            color
+            content
+            bold
+            textColor
+            ;
+        };
       timePillNormal = pill {
         color = fg;
         content = "%H:%M";
@@ -124,23 +165,33 @@
           }
         }  ' # two-space separator at the end
 
-        # Window pills: inactive = fg (colour7), active = blue (colour4)
-        set -g window-status-separator ""
+        # Window pills: split-pill (#index|title)
+        set -g window-status-separator " "
         set -g window-status-format '${
-          pill {
+          pillLeft {
             color = fg;
-            content = "#W";
+            content = "#I ";
           }
-        } ' # one-space separator at the end
+        }${
+          pillRight {
+            color = fgDim;
+            content = " #W";
+            textColor = fg;
+          }
+        }'
         set -g window-status-current-format '${
-          pill {
+          pillLeft {
             color = blue;
-            content = "#W";
+            content = "#I ";
             bold = true;
           }
-        } ' # one-space separator at the end
+        }${
+          pillRight {
+            color = fg;
+            content = " #W";
+          }
+        }'
 
-        # Time pill: fg normally, yellow when prefix held
         set -g status-right '#{?client_prefix,${timePillPrefix},${timePillNormal}}'
       '';
     in
