@@ -20,8 +20,19 @@
         fi
         /opt/homebrew/bin/claude "$@"
       '';
+      askClaude = pkgs.writeShellScriptBin "ask-claude" ''
+        if [ $# -eq 0 ]; then
+          echo "Usage: ?? <question>" >&2
+          exit 1
+        fi
+        claude -p "$*"
+      '';
     in
     {
-      home.packages = [ claudeWrapper ];
+      home.packages = [
+        claudeWrapper
+        askClaude
+      ];
+      home.shellAliases."??" = "ask-claude";
     };
 }
