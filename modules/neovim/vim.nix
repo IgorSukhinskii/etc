@@ -30,6 +30,9 @@
             enable = true;
             registers = "unnamed,unnamedplus";
           };
+          debugger.nvim-dap = {
+            enable = true;
+          };
           git.gitsigns.enable = true;
           statusline.lualine.enable = true;
           tabline.nvimBufferline.enable = true;
@@ -84,6 +87,7 @@
             };
           };
           languages = {
+            enableDAP = true;
             python = lang // {
               lsp.enable = false;
             };
@@ -102,6 +106,11 @@
               lsp.servers = [ "jsonls" ];
             };
             nu = {
+              enable = true;
+              lsp.enable = true;
+              treesitter.enable = true;
+            };
+            zig = {
               enable = true;
               lsp.enable = true;
               treesitter.enable = true;
