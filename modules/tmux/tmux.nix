@@ -92,6 +92,11 @@
         content = "%H:%M";
         bold = true;
       };
+      # Calendar pill — shows next meeting title + start time via ical (EventKit CLI).
+      calPill = pill {
+        color = blue;
+        content = "  #(${nextMeetingScript}/bin/tmux-next-meeting)";
+      };
 
       terminalConfig = ''
         set -g renumber-windows on
@@ -153,8 +158,8 @@
         # Status bar on top with rounded-pill style
         set -g status-position top
         set -g status-left-length 40
-        set -g status-right-length 20
-        set -g status-interval 60
+        set -g status-right-length 60
+        set -g status-interval 30
 
         # Session pill: yellow background
         set -g status-left '${
@@ -192,7 +197,16 @@
           }
         }'
 
-        set -g status-right '#{?client_prefix,${timePillPrefix},${timePillNormal}}'
+        set -g status-right '#{?#{==:#{#(${nextMeetingScript}/bin/tmux-next-meeting)},},,${calPill} }#{?client_prefix,${timePillPrefix},${timePillNormal}}'
+      '';
+      nextMeetingScript = pkgs.writeShellScriptBin "tmux-next-meeting" ''
+        export PATH="$HOME/.nix-profile/bin:/run/current-system/sw/bin:$PATH"
+        output=$(ical upcoming -n 1 -o json --no-color 2>/dev/null)
+        [ -z "$output" ] || [ "$output" = "[]" ] && exit 0
+        title=$(echo "$output" | ${pkgs.jq}/bin/jq -r '.[0].title' 2>/dev/null)
+        start=$(echo "$output" | ${pkgs.jq}/bin/jq -r '.[0].start_date' 2>/dev/null)
+        time=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$start" "+%H:%M" 2>/dev/null)
+        printf '%s %s\n' "$title" "$time" | cut -c1-28
       '';
     in
     {
@@ -200,6 +214,7 @@
         sessionizer
         paneCenterScript
         paneNavScript
+        nextMeetingScript
         pkgs.nushell
       ];
 

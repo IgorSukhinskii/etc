@@ -3,6 +3,8 @@
   flake.homeManagerModules.shell =
     { ... }:
     {
+      xdg.enable = true;
+
       home.shell.enableZshIntegration = true;
 
       home.shellAliases = {
