@@ -1,7 +1,12 @@
 { ... }:
 {
   flake.homeManagerModules.tmux =
-    { pkgs, config, ... }:
+    {
+      pkgs,
+      config,
+      lib,
+      ...
+    }:
     let
       paneCenterScript = pkgs.writeScriptBin "tmux-pane-center" (
         "#!${pkgs.nushell}/bin/nu\n" + builtins.readFile ./tmux-pane-center.nu
@@ -9,13 +14,45 @@
       paneNavScript = pkgs.writeScriptBin "tmux-nav" (
         "#!${pkgs.nushell}/bin/nu\n" + builtins.readFile ./tmux-nav.nu
       );
+
+      cfg = config.programs.tmux.sessionizer;
+
+      # bash array literal: (~/etc ~/vault ~)
+      directPathsBash = "(${lib.concatMapStringsSep " " (d: d.path) cfg.directDirs})";
+
+      # bash associative array entries: ["~/etc"]="" ["~"]="default"
+      nameOverridesBash = lib.concatMapStrings (d: "[\"${d.path}\"]=\"${d.name}\" ") cfg.directDirs;
+
+      # find commands for each scan dir, one per line
+      scanFindsBash = lib.concatMapStringsSep "\n  " (
+        d: "find ${d} -maxdepth 1 -mindepth 1 -type d 2>/dev/null"
+      ) cfg.scanDirs;
+
       sessionizer = pkgs.writeShellScriptBin "sessionizer" ''
-        selected=$(printf '%s\n' ~/etc ~/vault \
-          $(find ~/code -maxdepth 1 -mindepth 1 -type d 2>/dev/null) \
+        declare -A SESSION_NAMES=(${nameOverridesBash})
+        direct_paths=${directPathsBash}
+
+        scan_results=$(
+          ${scanFindsBash}
+        )
+
+        direct_display=$(printf '%s\n' "''${direct_paths[@]}" | sed "s|^$HOME|~|")
+        scan_display=$(echo "$scan_results" | sed "s|^$HOME|~|")
+
+        selected=$(printf '%s\n%s' "$direct_display" "$scan_display" \
+          | sed '/^[[:space:]]*$/d' \
           | ${pkgs.fzf}/bin/fzf --tmux 40%)
         [ -z "$selected" ] && exit 0
-        name=$(basename "$selected" | tr . _)
-        tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$selected"
+
+        path=$(echo "$selected" | sed "s|^~|$HOME|")
+
+        if [ -n "''${SESSION_NAMES[$selected]+x}" ] && [ -n "''${SESSION_NAMES[$selected]}" ]; then
+          name="''${SESSION_NAMES[$selected]}"
+        else
+          name=$(basename "$path" | tr . _)
+        fi
+
+        tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
         tmux switch-client -t "$name"
       '';
       # builtins.fromJSON decodes \uXXXX at eval time, keeping source ASCII-safe
@@ -210,22 +247,58 @@
       '';
     in
     {
-      home.packages = [
-        sessionizer
-        paneCenterScript
-        paneNavScript
-        nextMeetingScript
-        pkgs.nushell
-      ];
+      options.programs.tmux.sessionizer = {
+        directDirs = lib.mkOption {
+          type = lib.types.listOf (
+            lib.types.submodule {
+              options = {
+                path = lib.mkOption { type = lib.types.str; };
+                name = lib.mkOption {
+                  type = lib.types.str;
+                  default = "";
+                };
+              };
+            }
+          );
+          default = [ ];
+        };
+        scanDirs = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ ];
+        };
+      };
 
-      programs.tmux = {
-        enable = true;
-        keyMode = "vi";
-        mouse = true;
-        baseIndex = 1;
-        escapeTime = 0;
-        terminal = "tmux-256color";
-        extraConfig = terminalConfig + keymapConfig + statuslineConfig;
+      config = {
+        programs.tmux.sessionizer.directDirs = [
+          { path = "~/etc"; }
+          { path = "~/vault"; }
+          {
+            path = "~";
+            name = "default";
+          }
+        ];
+        programs.tmux.sessionizer.scanDirs = [
+          "~/code"
+          "~/projects"
+        ];
+
+        home.packages = [
+          sessionizer
+          paneCenterScript
+          paneNavScript
+          nextMeetingScript
+          pkgs.nushell
+        ];
+
+        programs.tmux = {
+          enable = true;
+          keyMode = "vi";
+          mouse = true;
+          baseIndex = 1;
+          escapeTime = 0;
+          terminal = "tmux-256color";
+          extraConfig = terminalConfig + keymapConfig + statuslineConfig;
+        };
       };
     };
 }
