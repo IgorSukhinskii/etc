@@ -62,7 +62,7 @@
       # config.lib.stylix.colors.baseXX returns hex without '#' (e.g. "1e1e2e").
       c = config.lib.stylix.colors;
       bg = "#${c.base00}"; # terminal background
-      fgDim = "#${c.base04}"; # dark foreground / Surface2
+      fgDim = "#${c.base03}"; # dark foreground / Surface2
       fg = "#${c.base05}"; # default foreground
       yellow = "#${c.base0A}";
       blue = "#${c.base0D}";
