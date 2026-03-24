@@ -1,7 +1,7 @@
 { ... }:
 {
   flake.homeManagerModules.shell =
-    { ... }:
+    { config, ... }:
     {
       xdg.enable = true;
 
@@ -13,6 +13,7 @@
 
       programs.zsh = {
         enable = true;
+        dotDir = "${config.xdg.configHome}/zsh";
         sessionVariables = {
           EDITOR = "nvim";
           VISUAL = "nvim";
