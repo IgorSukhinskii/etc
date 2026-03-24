@@ -17,6 +17,14 @@
         sessionVariables = {
           EDITOR = "nvim";
           VISUAL = "nvim";
+          CARGO_HOME = "${config.xdg.dataHome}/cargo";
+          BUN_INSTALL = "${config.xdg.dataHome}/bun";
+          NPM_CONFIG_CACHE = "${config.xdg.cacheHome}/npm";
+          NPM_CONFIG_PREFIX = "${config.xdg.dataHome}/npm";
+          DOCKER_CONFIG = "${config.xdg.configHome}/docker";
+          AZURE_CONFIG_DIR = "${config.xdg.configHome}/azure";
+          GEM_HOME = "${config.xdg.dataHome}/gem";
+          GEM_SPEC_CACHE = "${config.xdg.cacheHome}/gem";
         };
       };
 
