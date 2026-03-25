@@ -43,5 +43,9 @@
       programs.nix-your-shell = {
         enable = true;
       };
+
+      programs.fzf = {
+        enable = true;
+      };
     };
 }
