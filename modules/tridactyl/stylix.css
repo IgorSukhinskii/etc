@@ -1,0 +1,151 @@
+/* Tridactyl gruvbox theme via Stylix base16.
+   Color tokens appear ONLY in the palette block below (substituted by pkgs.replaceVars).
+   Everything else references var(--baseXX).
+
+   Safety note: this CSS is injected into every page AND into the command line
+   iframe. Rules using Tridactyl-specific IDs/classes are safe (they don't
+   match anything on normal pages). Only bare tag selectors (body, etc.) are unsafe. */
+
+:root {
+    /* ===== Palette — only place color tokens appear ===== */
+    --base00: #@base00@;   /* darkest bg     */
+    --base01: #@base01@;   /* dark bg        */
+    --base02: #@base02@;   /* dark bg hi     */
+    --base03: #@base03@;   /* comments/muted */
+    --base04: #@base04@;   /* light grey     */
+    --base05: #@base05@;   /* fg             */
+    --base06: #@base06@;   /* lighter fg     */
+    --base07: #@base07@;   /* lightest fg    */
+    --base08: #@base08@;   /* red            */
+    --base09: #@base09@;   /* orange         */
+    --base0A: #@base0A@;   /* yellow         */
+    --base0B: #@base0B@;   /* green          */
+    --base0C: #@base0C@;   /* cyan           */
+    --base0D: #@base0D@;   /* blue           */
+    --base0E: #@base0E@;   /* purple         */
+    --base0F: #@base0F@;   /* brown          */
+
+    /* ===== Tridactyl theme variables ===== */
+
+    --tridactyl-bg: var(--base00);
+    --tridactyl-fg: var(--base05);
+
+    /* Command line */
+    --tridactyl-cmdl-bg:          var(--base01);
+    --tridactyl-cmdl-fg:          var(--base05);
+    --tridactyl-cmdl-font-size:   14px;
+    --tridactyl-cmdl-line-height: 1.5;
+
+    /* Completions */
+    --tridactyl-cmplt-bg:            var(--base00);
+    --tridactyl-cmplt-fg:            var(--base05);
+    --tridactyl-cmplt-border-top:    1px solid var(--base02);
+    --tridactyl-cmplt-font-size:     13px;
+    --tridactyl-cmplt-option-height: 2em;
+
+    /* URL */
+    --tridactyl-url-fg: var(--base0D);
+    --tridactyl-url-bg: transparent;
+
+    /* Hints — all element-level hint styles transparent to avoid page tinting */
+    --tridactyl-hint-bg:                      transparent;
+    --tridactyl-hint-fg:                      inherit;
+    --tridactyl-hint-outline:                 none;
+    --tridactyl-hint-active-bg:               transparent;
+    --tridactyl-hint-active-fg:               inherit;
+    --tridactyl-hint-active-outline:          none;
+    --tridactyl-hint-highlight-bg:            transparent;
+    --tridactyl-hint-highlight-fg:            inherit;
+    --tridactyl-hint-highlight-active-bg:     transparent;
+    --tridactyl-hint-highlight-active-fg:     inherit;
+    --tridactyl-hint-highlight-outline:       none;
+    --tridactyl-hint-highlight-active-outline: none;
+
+    /* Hint span labels (the floating letter badges) */
+    --tridactyl-hintspan-bg:           var(--base0A);
+    --tridactyl-hintspan-fg:           var(--base00);
+    --tridactyl-hintspan-font-size:    11px;
+    --tridactyl-hintspan-font-weight:  bold;
+    --tridactyl-hintspan-border-color: var(--base09);
+    --tridactyl-hintspan-border-width: 1px;
+    --tridactyl-hintspan-border-style: solid;
+    --tridactyl-hintspan-active-bg:    var(--base0B);
+    --tridactyl-hintspan-active-fg:    var(--base00);
+
+    /* Status bar */
+    --tridactyl-status-bg: var(--base01);
+    --tridactyl-status-fg: var(--base05);
+
+    /* Selected completion row */
+    --tridactyl-of-bg: var(--base02);
+    --tridactyl-of-fg: var(--base06);
+
+    /* Misc */
+    --tridactyl-highlight-box-bg: var(--base02);
+    --tridactyl-highlight-box-fg: var(--base05);
+
+    /* Section headers — flat, no gradient */
+    --tridactyl-header-first-bg:      var(--base01);
+    --tridactyl-header-second-bg:     var(--base01);
+    --tridactyl-header-third-bg:      var(--base01);
+    --tridactyl-header-border-bottom: 1px solid var(--base02);
+}
+
+/* ===== Layout: centered floating panel ===== */
+
+:root #cmdline_iframe {
+    position: fixed !important;
+    bottom: unset !important;
+    top: 20% !important;
+    left: 50% !important;
+    width: 750px !important;
+    max-width: 80vw !important;
+    transform: translateX(-50%) !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    /* No border/shadow here — they render even when the iframe is height:0,
+       leaving a visible line. Visual chrome lives on inner elements instead. */
+}
+
+/* Input row first (above completions).
+   Border on inner elements only — any border/shadow on the outer #cmdline_iframe
+   itself renders as a ghost line when the iframe is height:0 (hidden state). */
+:root #command-line-holder {
+    order: 1;
+    padding: 10px 14px;
+    border-top:    1px solid var(--base02);
+    border-left:   1px solid var(--base02);
+    border-right:  1px solid var(--base02);
+    border-bottom: 1px solid var(--base02);
+}
+
+/* Completions below input */
+:root #completions {
+    order: 2;
+    border-left:   1px solid var(--base02);
+    border-right:  1px solid var(--base02);
+    border-bottom: 1px solid var(--base02);
+}
+
+/* Focused row */
+:root #completions .focused,
+:root #completions .focused td {
+    background: var(--base02) !important;
+    color:      var(--base06) !important;
+}
+
+:root #completions .focused .url {
+    color: var(--base0D) !important;
+}
+
+/* Flat section headers */
+:root #completions .sectionHeader {
+    background:       var(--base01) !important;
+    background-image: none !important;
+    color:            var(--base03) !important;
+    font-size:        10px !important;
+    letter-spacing:   0.08em !important;
+    text-transform:   uppercase !important;
+    padding:          4px 8px !important;
+    border-bottom:    1px solid var(--base02) !important;
+}
