@@ -1,5 +1,5 @@
-/* Tridactyl gruvbox theme via Stylix base16.
-   Color tokens appear ONLY in the palette block below (substituted by pkgs.replaceVars).
+/* Tridactyl gruvbox theme — base24, dynamic polarity via @media.
+   Color tokens appear ONLY in the palette blocks below (substituted by pkgs.replaceVars).
    Everything else references var(--baseXX).
 
    Safety note: this CSS is injected into every page AND into the command line
@@ -7,26 +7,65 @@
    match anything on normal pages). Only bare tag selectors (body, etc.) are unsafe. */
 
 :root {
-    /* ===== Palette — only place color tokens appear ===== */
-    --base00: #@base00@;   /* darkest bg     */
-    --base01: #@base01@;   /* dark bg        */
-    --base02: #@base02@;   /* dark bg hi     */
-    --base03: #@base03@;   /* comments/muted */
-    --base04: #@base04@;   /* light grey     */
-    --base05: #@base05@;   /* fg             */
-    --base06: #@base06@;   /* lighter fg     */
-    --base07: #@base07@;   /* lightest fg    */
-    --base08: #@base08@;   /* red            */
-    --base09: #@base09@;   /* orange         */
-    --base0A: #@base0A@;   /* yellow         */
-    --base0B: #@base0B@;   /* green          */
-    --base0C: #@base0C@;   /* cyan           */
-    --base0D: #@base0D@;   /* blue           */
-    --base0E: #@base0E@;   /* purple         */
-    --base0F: #@base0F@;   /* brown          */
+    /* ===== Light palette (default) ===== */
+    --base00: #@light_base00@;   /* darkest bg     */
+    --base01: #@light_base01@;   /* dark bg        */
+    --base02: #@light_base02@;   /* dark bg hi     */
+    --base03: #@light_base03@;   /* comments/muted */
+    --base04: #@light_base04@;   /* light grey     */
+    --base05: #@light_base05@;   /* fg             */
+    --base06: #@light_base06@;   /* lighter fg     */
+    --base07: #@light_base07@;   /* lightest fg    */
+    --base08: #@light_base08@;   /* red            */
+    --base09: #@light_base09@;   /* orange         */
+    --base0A: #@light_base0A@;   /* yellow         */
+    --base0B: #@light_base0B@;   /* green          */
+    --base0C: #@light_base0C@;   /* cyan           */
+    --base0D: #@light_base0D@;   /* blue           */
+    --base0E: #@light_base0E@;   /* purple         */
+    --base0F: #@light_base0F@;   /* brown          */
+    --base10: #@light_base10@;   /* darker bg      */
+    --base11: #@light_base11@;   /* darkest bg     */
+    --base12: #@light_base12@;   /* bright red     */
+    --base13: #@light_base13@;   /* bright yellow  */
+    --base14: #@light_base14@;   /* bright green   */
+    --base15: #@light_base15@;   /* bright cyan    */
+    --base16: #@light_base16@;   /* bright blue    */
+    --base17: #@light_base17@;   /* bright magenta */
+}
 
-    /* ===== Tridactyl theme variables ===== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --base00: #@dark_base00@;
+        --base01: #@dark_base01@;
+        --base02: #@dark_base02@;
+        --base03: #@dark_base03@;
+        --base04: #@dark_base04@;
+        --base05: #@dark_base05@;
+        --base06: #@dark_base06@;
+        --base07: #@dark_base07@;
+        --base08: #@dark_base08@;
+        --base09: #@dark_base09@;
+        --base0A: #@dark_base0A@;
+        --base0B: #@dark_base0B@;
+        --base0C: #@dark_base0C@;
+        --base0D: #@dark_base0D@;
+        --base0E: #@dark_base0E@;
+        --base0F: #@dark_base0F@;
+        --base10: #@dark_base10@;
+        --base11: #@dark_base11@;
+        --base12: #@dark_base12@;
+        --base13: #@dark_base13@;
+        --base14: #@dark_base14@;
+        --base15: #@dark_base15@;
+        --base16: #@dark_base16@;
+        --base17: #@dark_base17@;
+    }
+}
 
+/* ===== Tridactyl theme variables ===== */
+
+:root {
     --tridactyl-bg: var(--base00);
     --tridactyl-fg: var(--base05);
 

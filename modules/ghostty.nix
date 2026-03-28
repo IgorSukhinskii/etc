@@ -1,5 +1,11 @@
 { ... }:
 {
+  flake.darwinModules.terminal-fonts =
+    { pkgs, ... }:
+    {
+      fonts.packages = [ pkgs.nerd-fonts.jetbrains-mono ];
+    };
+
   flake.homeManagerModules.terminal =
     { pkgs, ... }:
     {
@@ -10,6 +16,8 @@
           macos-titlebar-style = "hidden";
           macos-option-as-alt = "left";
           background-opacity = 0.9;
+          font-family = "JetBrainsMono Nerd Font";
+          theme = "dark:gruvbox-dark,light:gruvbox-light";
           # ghostty `unbind` removes its own action but macOS text-input has no
           # terminal encoding for Ctrl+Tab, so the key is silently dropped.
           # `csi:` explicitly sends the kitty keyboard protocol sequence to the PTY:

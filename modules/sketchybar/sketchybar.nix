@@ -21,10 +21,10 @@
       ...
     }:
     let
-      c = config.lib.stylix.colors;
+      c = config.themes.palette.dark;
 
       # sketchybar color format: "0xff" + 6-digit hex (no #)
-      # Names follow the base16 spec — stable across all themes
+      # Names follow the base24 spec — stable across all themes
       clrBg = "0xff${c.base00}"; # default background
       clrBgAlt = "0xff${c.base01}"; # lighter background
       clrDim = "0xff${c.base03}"; # comments / dimmed

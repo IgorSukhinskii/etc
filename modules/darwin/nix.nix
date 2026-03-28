@@ -3,6 +3,7 @@
   flake.darwinModules.nix =
     { config, ... }:
     {
+      nix.settings.allow-import-from-derivation = true;
       nix.settings.experimental-features = [
         "nix-command"
         "flakes"

@@ -1,9 +1,16 @@
 { ... }:
 {
   flake.homeManagerModules.tridactyl =
-    { pkgs, config, ... }:
+    {
+      pkgs,
+      config,
+      lib,
+      ...
+    }:
     let
-      colors = config.lib.stylix.colors;
+      # Prefix both palettes to avoid collision: dark_base00, light_base00, etc.
+      darkVars = lib.mapAttrs' (n: v: lib.nameValuePair "dark_${n}" v) config.themes.palette.dark;
+      lightVars = lib.mapAttrs' (n: v: lib.nameValuePair "light_${n}" v) config.themes.palette.light;
     in
     {
       home.packages = [ pkgs.tridactyl-native ];
@@ -16,25 +23,8 @@
         homeDirectory = config.home.homeDirectory;
       };
 
-      home.file.".config/tridactyl/themes/stylix.css".source = pkgs.replaceVars ./stylix.css {
-        inherit (colors)
-          base00
-          base01
-          base02
-          base03
-          base04
-          base05
-          base06
-          base07
-          base08
-          base09
-          base0A
-          base0B
-          base0C
-          base0D
-          base0E
-          base0F
-          ;
-      };
+      home.file.".config/tridactyl/themes/theme.css".source = pkgs.replaceVars ./theme.css (
+        darkVars // lightVars
+      );
     };
 }

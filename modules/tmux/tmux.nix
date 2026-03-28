@@ -58,14 +58,13 @@
       # builtins.fromJSON decodes \uXXXX at eval time, keeping source ASCII-safe
       capL = builtins.fromJSON ''"\uE0B6"''; # left rounded half-circle
       capR = builtins.fromJSON ''"\uE0B4"''; # right rounded half-circle
-      # Base16 hex colors from Stylix — all 16 available, theme-safe.
-      # config.lib.stylix.colors.baseXX returns hex without '#' (e.g. "1e1e2e").
-      c = config.lib.stylix.colors;
-      bg = "#${c.base00}"; # terminal background
-      fgDim = "#${c.base03}"; # dark foreground / Surface2
-      fg = "#${c.base05}"; # default foreground
-      yellow = "#${c.base0A}";
-      blue = "#${c.base0D}";
+      # ANSI terminal color references — tmux reads these from the terminal palette,
+      # so Ghostty's polarity switch propagates automatically (no hook needed).
+      bg = "colour0"; # ANSI 0  = base00 (background)
+      fgDim = "colour8"; # ANSI 8  = base03 (bright black / comments)
+      fg = "colour7"; # ANSI 7  = base05 (foreground)
+      yellow = "colour3"; # ANSI 3  = base0A (yellow)
+      blue = "colour4"; # ANSI 4  = base0D (blue)
       # (omitting red/orange/brown — add if needed)
       # Primitive: left cap + content on `color` bg, then reset to default.
       # Standalone-safe (resets bg after content) and composable (pillRight overrides bg next).
@@ -193,6 +192,7 @@
 
       statuslineConfig = ''
         # Status bar on top with rounded-pill style
+        set -g status-style default
         set -g status-position top
         set -g status-left-length 40
         set -g status-right-length 60

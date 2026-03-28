@@ -25,7 +25,6 @@
       programs.delta = {
         enable = true;
         enableGitIntegration = true;
-        options.syntax-theme = "base16-stylix";
       };
 
       programs.direnv = {

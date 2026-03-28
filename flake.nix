@@ -13,9 +13,9 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
-    stylix = {
-      url = "github:nix-community/stylix";
-      inputs.nixpkgs.follows = "nixpkgs";
+    base24-schemes = {
+      url = "github:tinted-theming/schemes";
+      flake = false;
     };
     nvf = {
       url = "github:NotAShelf/nvf";
