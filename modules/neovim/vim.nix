@@ -1,4 +1,7 @@
-{ ... }:
+{ inputs, ... }:
+let
+  nvfDag = inputs.nvf.lib.nvim.dag;
+in
 {
   flake.homeManagerModules.neovim =
     {
@@ -122,7 +125,7 @@
               treesitter.enable = true;
             };
           };
-          luaConfigRC.ansi-colorscheme = /* lua */ ''
+          luaConfigRC.ansi-colorscheme = nvfDag.entryAfter [ "optionsScript" ] /* lua */ ''
             vim.o.termguicolors = false
             vim.cmd("colorscheme ansi")
           '';
