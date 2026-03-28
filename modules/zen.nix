@@ -108,12 +108,88 @@
           path = "default";
           settings."toolkit.legacyUserProfileCustomizations.stylesheets" = true;
           userChrome = ''
+            /* Palette variables — light by default, dark under prefers-color-scheme */
             :root {
             ${mkCssVars "light" config.themes.palette.light}}
             @media (prefers-color-scheme: dark) {
               :root {
             ${mkCssVars "dark" config.themes.palette.dark}  }
             }
+
+            /* ── Zen chrome theming ────────────────────────────────────────── */
+            :root {
+              --zen-colors-primary:               var(--base02) !important;
+              --zen-primary-color:                var(--base0D) !important;
+              --zen-colors-secondary:             var(--base02) !important;
+              --zen-colors-tertiary:              var(--base01) !important;
+              --zen-colors-border:                var(--base0D) !important;
+              --toolbarbutton-icon-fill:          var(--base0D) !important;
+              --lwt-text-color:                   var(--base05) !important;
+              --toolbar-field-color:              var(--base05) !important;
+              --tab-selected-textcolor:           var(--base05) !important;
+              --toolbar-field-focus-color:        var(--base05) !important;
+              --toolbar-color:                    var(--base05) !important;
+              --newtab-text-primary-color:        var(--base05) !important;
+              --arrowpanel-color:                 var(--base05) !important;
+              --arrowpanel-background:            var(--base00) !important;
+              --sidebar-text-color:               var(--base05) !important;
+              --lwt-sidebar-text-color:           var(--base05) !important;
+              --lwt-sidebar-background-color:     var(--base00) !important;
+              --toolbar-bgcolor:                  var(--base02) !important;
+              --newtab-background-color:          var(--base00) !important;
+              --zen-themed-toolbar-bg:            var(--base00) !important;
+              --zen-main-browser-background:      var(--base00) !important;
+              --toolbox-bgcolor-inactive:         var(--base01) !important;
+            }
+
+            #permissions-granted-icon { color: var(--base05) !important; }
+
+            .sidebar-placesTree      { background-color: var(--base00) !important; }
+            #zen-workspaces-button   { background-color: var(--base00) !important; }
+            #TabsToolbar             { background-color: var(--base00) !important; }
+            .urlbar-background       { background-color: var(--base02) !important; }
+            .urlbarView-url          { color: var(--base0D) !important; }
+
+            .content-shortcuts {
+              background-color: var(--base00) !important;
+              border-color:     var(--base0D) !important;
+            }
+
+            #urlbar-input::selection {
+              background-color: var(--base0D) !important;
+              color:            var(--base00) !important;
+            }
+
+            #zenEditBookmarkPanelFaviconContainer { background: var(--base00) !important; }
+
+            #zen-media-controls-toolbar #zen-media-progress-bar::-moz-range-track {
+              background: var(--base02) !important;
+            }
+
+            toolbar .toolbarbutton-1:not([disabled]):is([open],[checked])
+              > :is(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
+              fill: var(--base00);
+            }
+
+            #navigator-toolbox {
+              --zen-main-browser-background-toolbar: var(--base00) !important;
+            }
+
+            #zen-appcontent-navbar-container { background-color: var(--base00) !important; }
+
+            #contentAreaContextMenu menu, menuitem, menupopup {
+              color: var(--base05) !important;
+            }
+
+            /* Container identity colors */
+            .identity-color-blue      { --identity-tab-color: var(--base0D) !important; --identity-icon-color: var(--base0D) !important; }
+            .identity-color-turquoise { --identity-tab-color: var(--base0C) !important; --identity-icon-color: var(--base0C) !important; }
+            .identity-color-green     { --identity-tab-color: var(--base0B) !important; --identity-icon-color: var(--base0B) !important; }
+            .identity-color-yellow    { --identity-tab-color: var(--base0A) !important; --identity-icon-color: var(--base0A) !important; }
+            .identity-color-orange    { --identity-tab-color: var(--base09) !important; --identity-icon-color: var(--base09) !important; }
+            .identity-color-red       { --identity-tab-color: var(--base08) !important; --identity-icon-color: var(--base08) !important; }
+            .identity-color-pink      { --identity-tab-color: var(--base0E) !important; --identity-icon-color: var(--base0E) !important; }
+            .identity-color-purple    { --identity-tab-color: var(--base0F) !important; --identity-icon-color: var(--base0F) !important; }
           '';
 
           # user.js — applied unconditionally on startup (user-level, not locked)

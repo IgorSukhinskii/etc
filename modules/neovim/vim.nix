@@ -25,6 +25,12 @@
           vimAlias = true;
           startPlugins = with pkgs.vimPlugins; [
             SchemaStore-nvim
+            # ANSI colorscheme: uses only terminal palette colors so polarity
+            # switching in Ghostty propagates automatically with no hook needed.
+            (pkgs.vimUtils.buildVimPlugin {
+              name = "ansi-colorscheme";
+              src = pkgs.writeTextDir "colors/ansi.vim" (builtins.readFile ./ansi.vim);
+            })
           ];
           clipboard = {
             enable = true;
@@ -116,6 +122,10 @@
               treesitter.enable = true;
             };
           };
+          luaConfigRC.ansi-colorscheme = /* lua */ ''
+            vim.o.termguicolors = false
+            vim.cmd("colorscheme ansi")
+          '';
           luaConfigRC.schemastore = builtins.readFile ./schemastore.lua;
           luaConfigRC.buffercycle = /* lua */ ''
             vim.keymap.set("n", "<C-Tab>",   "<Cmd>BufferLineCycleNext<CR>", { desc = "Next buffer" })
