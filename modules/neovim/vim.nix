@@ -137,65 +137,95 @@ in
               treesitter.enable = true;
             };
           };
-          luaConfigRC.base16-polarity = nvfDag.entryAfter [ "optionsScript" ] /* lua */ ''
+          luaConfigRC.base16-polarity = nvfDag.entryBefore [ "pluginConfigs" ] /* lua */ ''
             local base16 = require("base16-colorscheme")
             local schemes = {
               dark  = ${dark},
               light = ${light},
             }
-            local function is_dark()
-              return vim.fn.system("defaults read -g AppleInterfaceStyle 2>/dev/null"):find("Dark") ~= nil
-            end
-            -- bufferline.setup() runs in lazyConfigs before this section, so it
-            -- derives highlight groups before the scheme is applied. Set them
-            -- explicitly here so they're always correct on startup and polarity switch.
-            local function apply_bufferline_hl(p)
-              local hi = function(g, o) vim.api.nvim_set_hl(0, g, o) end
-              -- inactive / fill
-              hi("BufferLineFill",                  { bg = p.base01 })
-              hi("BufferLineBackground",            { fg = p.base03, bg = p.base01 })
-              hi("BufferLineBufferVisible",         { fg = p.base04, bg = p.base01 })
-              hi("BufferLineNumbers",               { fg = p.base03, bg = p.base01 })
-              hi("BufferLineNumbersVisible",        { fg = p.base04, bg = p.base01 })
-              hi("BufferLineCloseButton",           { fg = p.base03, bg = p.base01 })
-              hi("BufferLineCloseButtonVisible",    { fg = p.base04, bg = p.base01 })
-              hi("BufferLineSeparator",             { fg = p.base02, bg = p.base01 })
-              hi("BufferLineSeparatorVisible",      { fg = p.base02, bg = p.base01 })
-              hi("BufferLineModified",              { fg = p.base0A, bg = p.base01 })
-              hi("BufferLineModifiedVisible",       { fg = p.base0A, bg = p.base01 })
-              hi("BufferLineDiagnostic",            { fg = p.base03, bg = p.base01 })
-              hi("BufferLineError",                 { fg = p.base08, bg = p.base01 })
-              hi("BufferLineWarning",               { fg = p.base0A, bg = p.base01 })
-              hi("BufferLineInfo",                  { fg = p.base0D, bg = p.base01 })
-              hi("BufferLineHint",                  { fg = p.base0C, bg = p.base01 })
-              hi("BufferLinePick",                  { fg = p.base08, bg = p.base01, bold = true })
-              hi("BufferLineTab",                   { fg = p.base03, bg = p.base01 })
-              hi("BufferLineTabSeparator",          { fg = p.base02, bg = p.base01 })
-              hi("BufferLineOffsetSeparator",       { fg = p.base02, bg = p.base01 })
-              -- active (bg = base00 makes the active tab "pop" above the darker bar)
-              hi("BufferLineBufferSelected",        { fg = p.base05, bg = p.base00, bold = true })
-              hi("BufferLineNumbersSelected",       { fg = p.base05, bg = p.base00, bold = true })
-              hi("BufferLineCloseButtonSelected",   { fg = p.base08, bg = p.base00 })
-              hi("BufferLineSeparatorSelected",     { fg = p.base0D, bg = p.base00 })
-              hi("BufferLineIndicatorSelected",     { fg = p.base0D, bg = p.base00 })
-              hi("BufferLineModifiedSelected",      { fg = p.base0A, bg = p.base00 })
-              hi("BufferLineDiagnosticSelected",    { fg = p.base03, bg = p.base00 })
-              hi("BufferLineErrorSelected",         { fg = p.base08, bg = p.base00 })
-              hi("BufferLineWarningSelected",       { fg = p.base0A, bg = p.base00 })
-              hi("BufferLineInfoSelected",          { fg = p.base0D, bg = p.base00 })
-              hi("BufferLineHintSelected",          { fg = p.base0C, bg = p.base00 })
-              hi("BufferLinePickSelected",          { fg = p.base08, bg = p.base00, bold = true })
-              hi("BufferLineTabSelected",           { fg = p.base05, bg = p.base00 })
-              hi("BufferLineTabSeparatorSelected",  { fg = p.base0D, bg = p.base00 })
-              hi("BufferLineTabClose",              { fg = p.base08, bg = p.base01 })
-            end
+
+            -- Single entry point: reads vim.o.background and applies the matching palette.
+            -- Fires from BOTH the native DEC mode 2031 mechanism AND our manual sync below.
+            -- Firing ColorScheme afterwards lets bufferline and lualine re-derive their
+            -- highlights from the new Normal/Comment colors (both plugins listen to it).
             local function apply_scheme()
-              local p = is_dark() and schemes.dark or schemes.light
+              local p = (vim.o.background == "dark") and schemes.dark or schemes.light
               base16.setup(p)
-              apply_bufferline_hl(p)
+              vim.api.nvim_exec_autocmds("ColorScheme", { modeline = false })
             end
-            apply_scheme()
-            vim.api.nvim_create_autocmd("FocusGained", { callback = apply_scheme })
+            vim.api.nvim_create_autocmd("OptionSet", {
+              pattern = "background",
+              callback = apply_scheme,
+            })
+
+            -- FocusGained fallback: sync vim.o.background from macOS, which triggers OptionSet → apply_scheme.
+            -- Can be deleted once tmux ships DEC mode 2031 passthrough.
+            local function sync_background()
+              local want = vim.fn.system("defaults read -g AppleInterfaceStyle 2>/dev/null"):find("Dark")
+                ~= nil and "dark" or "light"
+              if vim.o.background ~= want then
+                vim.o.background = want   -- triggers OptionSet → apply_scheme
+              end
+            end
+            vim.api.nvim_create_autocmd("FocusGained", { callback = sync_background })
+
+            -- Initial sync on startup: sets vim.o.background → OptionSet → apply_scheme.
+            -- Runs before pluginConfigs, so lualine and bufferline see base16 already loaded.
+            sync_background()
+          '';
+          luaConfigRC.base16-bufferline = nvfDag.entryAfter [ "pluginConfigs" ] /* lua */ ''
+            local function apply_bufferline_hl()
+              local p = (vim.o.background == "dark") and schemes.dark or schemes.light
+              local hl = vim.api.nvim_set_hl
+              -- Inactive / fill (base01 bg throughout; separator fg = base02 distinguishes tabs)
+              hl(0, "BufferLineFill",                  { fg = p.base02, bg = p.base01 })
+              hl(0, "BufferLineBackground",            { fg = p.base03, bg = p.base01 })
+              hl(0, "BufferLineBufferVisible",         { fg = p.base04, bg = p.base01 })
+              hl(0, "BufferLineNumbers",               { fg = p.base03, bg = p.base01 })
+              hl(0, "BufferLineNumbersVisible",        { fg = p.base04, bg = p.base01 })
+              hl(0, "BufferLineCloseButton",           { fg = p.base03, bg = p.base01 })
+              hl(0, "BufferLineCloseButtonVisible",    { fg = p.base04, bg = p.base01 })
+              hl(0, "BufferLineSeparator",             { fg = p.base02, bg = p.base01 })
+              hl(0, "BufferLineSeparatorVisible",      { fg = p.base02, bg = p.base01 })
+              hl(0, "BufferLineModified",              { fg = p.base0A, bg = p.base01 })
+              hl(0, "BufferLineModifiedVisible",       { fg = p.base0A, bg = p.base01 })
+              hl(0, "BufferLineDiagnostic",            { fg = p.base03, bg = p.base01 })
+              hl(0, "BufferLineError",                 { fg = p.base08, bg = p.base01 })
+              hl(0, "BufferLineWarning",               { fg = p.base0A, bg = p.base01 })
+              hl(0, "BufferLineInfo",                  { fg = p.base0D, bg = p.base01 })
+              hl(0, "BufferLineHint",                  { fg = p.base0C, bg = p.base01 })
+              hl(0, "BufferLinePick",                  { fg = p.base08, bg = p.base01, bold = true })
+              hl(0, "BufferLineTab",                   { fg = p.base03, bg = p.base01 })
+              hl(0, "BufferLineTabSeparator",          { fg = p.base02, bg = p.base01 })
+              hl(0, "BufferLineOffsetSeparator",       { fg = p.base02, bg = p.base01 })
+              hl(0, "BufferLineTabClose",              { fg = p.base08, bg = p.base01 })
+              -- Active / selected tab (base00 bg — matches editor background)
+              hl(0, "BufferLineBufferSelected",        { fg = p.base05, bg = p.base00, bold = true })
+              hl(0, "BufferLineNumbersSelected",       { fg = p.base05, bg = p.base00, bold = true })
+              hl(0, "BufferLineCloseButtonSelected",   { fg = p.base08, bg = p.base00 })
+              hl(0, "BufferLineSeparatorSelected",     { fg = p.base0D, bg = p.base00 })
+              hl(0, "BufferLineIndicatorSelected",     { fg = p.base0D, bg = p.base00 })
+              hl(0, "BufferLineModifiedSelected",      { fg = p.base0A, bg = p.base00 })
+              hl(0, "BufferLineDiagnosticSelected",    { fg = p.base03, bg = p.base00 })
+              hl(0, "BufferLineErrorSelected",         { fg = p.base08, bg = p.base00 })
+              hl(0, "BufferLineWarningSelected",       { fg = p.base0A, bg = p.base00 })
+              hl(0, "BufferLineInfoSelected",          { fg = p.base0D, bg = p.base00 })
+              hl(0, "BufferLineHintSelected",          { fg = p.base0C, bg = p.base00 })
+              hl(0, "BufferLinePickSelected",          { fg = p.base08, bg = p.base00, bold = true })
+              hl(0, "BufferLineTabSelected",           { fg = p.base05, bg = p.base00 })
+              hl(0, "BufferLineTabSeparatorSelected",  { fg = p.base0D, bg = p.base00 })
+              -- Patch internal config so icon highlight derivation uses our bg values,
+              -- then clear the icon cache so icons re-derive on next render.
+              local cfg_hls = require("bufferline.config").highlights
+              if cfg_hls then
+                if cfg_hls.background then cfg_hls.background.bg = p.base01 end
+                if cfg_hls.buffer_selected then cfg_hls.buffer_selected.bg = p.base00 end
+              end
+              require("bufferline.highlights").reset_icon_hl_cache()
+            end
+            apply_bufferline_hl()
+            -- Fires after bufferline's own ColorScheme handler (registered earlier), overriding its output.
+            vim.api.nvim_create_autocmd("ColorScheme", { callback = apply_bufferline_hl })
           '';
           luaConfigRC.schemastore = builtins.readFile ./schemastore.lua;
           luaConfigRC.buffercycle = /* lua */ ''
