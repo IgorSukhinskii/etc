@@ -61,7 +61,10 @@ in
           };
           debugger.nvim-dap.enable = true;
           git.gitsigns.enable = true;
-          statusline.lualine.enable = true;
+          statusline.lualine = {
+            enable = true;
+            setupOpts.options.theme = "base16";
+          };
           tabline.nvimBufferline.enable = true;
           lsp = {
             enable = true;
