@@ -146,8 +146,53 @@ in
             local function is_dark()
               return vim.fn.system("defaults read -g AppleInterfaceStyle 2>/dev/null"):find("Dark") ~= nil
             end
+            -- bufferline.setup() runs in lazyConfigs before this section, so it
+            -- derives highlight groups before the scheme is applied. Set them
+            -- explicitly here so they're always correct on startup and polarity switch.
+            local function apply_bufferline_hl(p)
+              local hi = function(g, o) vim.api.nvim_set_hl(0, g, o) end
+              -- inactive / fill
+              hi("BufferLineFill",                  { bg = p.base01 })
+              hi("BufferLineBackground",            { fg = p.base03, bg = p.base01 })
+              hi("BufferLineBufferVisible",         { fg = p.base04, bg = p.base01 })
+              hi("BufferLineNumbers",               { fg = p.base03, bg = p.base01 })
+              hi("BufferLineNumbersVisible",        { fg = p.base04, bg = p.base01 })
+              hi("BufferLineCloseButton",           { fg = p.base03, bg = p.base01 })
+              hi("BufferLineCloseButtonVisible",    { fg = p.base04, bg = p.base01 })
+              hi("BufferLineSeparator",             { fg = p.base02, bg = p.base01 })
+              hi("BufferLineSeparatorVisible",      { fg = p.base02, bg = p.base01 })
+              hi("BufferLineModified",              { fg = p.base0A, bg = p.base01 })
+              hi("BufferLineModifiedVisible",       { fg = p.base0A, bg = p.base01 })
+              hi("BufferLineDiagnostic",            { fg = p.base03, bg = p.base01 })
+              hi("BufferLineError",                 { fg = p.base08, bg = p.base01 })
+              hi("BufferLineWarning",               { fg = p.base0A, bg = p.base01 })
+              hi("BufferLineInfo",                  { fg = p.base0D, bg = p.base01 })
+              hi("BufferLineHint",                  { fg = p.base0C, bg = p.base01 })
+              hi("BufferLinePick",                  { fg = p.base08, bg = p.base01, bold = true })
+              hi("BufferLineTab",                   { fg = p.base03, bg = p.base01 })
+              hi("BufferLineTabSeparator",          { fg = p.base02, bg = p.base01 })
+              hi("BufferLineOffsetSeparator",       { fg = p.base02, bg = p.base01 })
+              -- active (bg = base00 makes the active tab "pop" above the darker bar)
+              hi("BufferLineBufferSelected",        { fg = p.base05, bg = p.base00, bold = true })
+              hi("BufferLineNumbersSelected",       { fg = p.base05, bg = p.base00, bold = true })
+              hi("BufferLineCloseButtonSelected",   { fg = p.base08, bg = p.base00 })
+              hi("BufferLineSeparatorSelected",     { fg = p.base0D, bg = p.base00 })
+              hi("BufferLineIndicatorSelected",     { fg = p.base0D, bg = p.base00 })
+              hi("BufferLineModifiedSelected",      { fg = p.base0A, bg = p.base00 })
+              hi("BufferLineDiagnosticSelected",    { fg = p.base03, bg = p.base00 })
+              hi("BufferLineErrorSelected",         { fg = p.base08, bg = p.base00 })
+              hi("BufferLineWarningSelected",       { fg = p.base0A, bg = p.base00 })
+              hi("BufferLineInfoSelected",          { fg = p.base0D, bg = p.base00 })
+              hi("BufferLineHintSelected",          { fg = p.base0C, bg = p.base00 })
+              hi("BufferLinePickSelected",          { fg = p.base08, bg = p.base00, bold = true })
+              hi("BufferLineTabSelected",           { fg = p.base05, bg = p.base00 })
+              hi("BufferLineTabSeparatorSelected",  { fg = p.base0D, bg = p.base00 })
+              hi("BufferLineTabClose",              { fg = p.base08, bg = p.base01 })
+            end
             local function apply_scheme()
-              base16.setup(is_dark() and schemes.dark or schemes.light)
+              local p = is_dark() and schemes.dark or schemes.light
+              base16.setup(p)
+              apply_bufferline_hl(p)
             end
             apply_scheme()
             vim.api.nvim_create_autocmd("FocusGained", { callback = apply_scheme })
