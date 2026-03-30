@@ -61,7 +61,7 @@
       # ANSI terminal color references — tmux reads these from the terminal palette,
       # so Ghostty's polarity switch propagates automatically (no hook needed).
       bg = "colour0"; # ANSI 0  = base00 (background)
-      fgDim = "colour8"; # ANSI 8  = base03 (bright black / comments)
+      bgDim = "colour19"; # ANSI 19  = base02 (dimer background)
       fg = "colour7"; # ANSI 7  = base05 (foreground)
       yellow = "colour3"; # ANSI 3  = base0A (yellow)
       blue = "colour4"; # ANSI 4  = base0D (blue)
@@ -216,7 +216,7 @@
           }
         }${
           pillRight {
-            color = fgDim;
+            color = bgDim;
             content = " #W";
             textColor = fg;
           }
