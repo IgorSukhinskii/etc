@@ -52,6 +52,7 @@ in
 
       dark_scheme = mkSchemeLua "dark" config.themes.palette.dark;
       light_scheme = mkSchemeLua "light" config.themes.palette.light;
+      indicator_icon = builtins.fromJSON ''"\u258E"''; # ▎
     in
     {
       programs.nvf = {
@@ -77,7 +78,10 @@ in
           tabline.nvimBufferline = {
             enable = true;
             setupOpts.options = {
-              separator_style = "slant";
+              indicator = {
+                icon = indicator_icon;
+                style = "icon";
+              };
               numbers = "none";
               hover = {
                 enabled = false;
@@ -160,39 +164,31 @@ in
             local tinted = require("tinted-nvim")
             tinted.setup({
               apply_scheme_on_startup = false,
+              ui = {
+                transparent = true,
+              },
               schemes = {
                 ["base24-dark"]  = ${dark_scheme},
                 ["base24-light"] = ${light_scheme},
               },
             })
 
-            local function sync_background()
-              local is_dark = vim.fn.system("defaults read -g AppleInterfaceStyle 2>/dev/null"):find("Dark") ~= nil
-              local scheme = is_dark and "base24-dark" or "base24-light"
+            -- DEC mode 2031 sets vim.o.background directly; keep scheme in sync.
+            -- Guard against re-entrancy: tinted.load() sets background, which fires OptionSet again.
+            local function apply_scheme()
+              local scheme = (vim.o.background == "dark") and "base24-dark" or "base24-light"
               if tinted.get_scheme() ~= scheme then
                 tinted.load(scheme)
               end
             end
 
-            -- DEC mode 2031 sets vim.o.background directly; keep scheme in sync.
-            -- Guard against re-entrancy: tinted.load() sets background, which fires OptionSet again.
             vim.api.nvim_create_autocmd("OptionSet", {
               pattern = "background",
-              callback = function()
-                local scheme = (vim.o.background == "dark") and "base24-dark" or "base24-light"
-                if tinted.get_scheme() ~= scheme then
-                  tinted.load(scheme)
-                end
-              end,
+              callback = apply_scheme,
             })
 
-            -- FocusGained fallback: sync from macOS dark mode state.
-            -- Can be removed once tmux ships DEC mode 2031 passthrough.
-            vim.api.nvim_create_autocmd("FocusGained", { callback = sync_background })
-
-            -- Initial sync on startup — runs before pluginConfigs so lualine and
-            -- bufferline see the correct highlights when they register their handlers.
-            sync_background()
+            -- Initial call fixes black icon background on first open.
+            apply_scheme()
           '';
           luaConfigRC.tinted-bufferline = nvfDag.entryAfter [ "pluginConfigs" ] /* lua */ ''
             local tinted = require("tinted-nvim")
@@ -200,13 +196,15 @@ in
             local function apply_bufferline_hl()
               local p = tinted.get_palette()
               if not p then return end
-              local is_dark = vim.o.background == "dark"
               local hl = vim.api.nvim_set_hl
 
-              -- Three-tier bg: fill(base10/base02) < inactive(base01) < active(base00)
-              local fill_bg     = is_dark and p.base11 or p.base03
-              local inactive_bg = p.base02
-              local active_bg   = p.base00
+              local fill_bg     = "NONE"
+              local inactive_bg = "NONE"
+              local active_bg   = "NONE"
+
+              -- TabLineFill is the Neovim tabline window background — transparent BufferLine groups
+              -- fall back to this if it's not cleared, so it must be NONE too.
+              hl(0, "TabLineFill",                          { bg = "NONE" })
 
               -- Fill area (bar behind all tabs)
               hl(0, "BufferLineFill",                       { fg = p.base03, bg = fill_bg })
@@ -242,12 +240,12 @@ in
               hl(0, "BufferLineHintVisible",                { fg = p.base0C, bg = inactive_bg })
               hl(0, "BufferLineHintDiagnosticVisible",      { fg = p.base0C, bg = inactive_bg })
               hl(0, "BufferLinePickVisible",                { fg = p.base08, bg = inactive_bg, bold = true })
-              -- Separators (slant): fg = fill_bg (the cut-through glyph), bg = tab body
-              hl(0, "BufferLineSeparator",                  { fg = fill_bg, bg = inactive_bg })
-              hl(0, "BufferLineSeparatorVisible",           { fg = fill_bg, bg = inactive_bg })
+              -- Thin separators: "thin" style is not state-aware, all use BufferLineSeparator
+              hl(0, "BufferLineSeparator",                  { fg = p.base04, bg = inactive_bg })
+              hl(0, "BufferLineSeparatorVisible",           { fg = p.base04, bg = inactive_bg })
               -- Tab bar (vim tabs, not buffer tabs)
               hl(0, "BufferLineTab",                        { fg = p.base04, bg = inactive_bg })
-              hl(0, "BufferLineTabSeparator",               { fg = fill_bg, bg = inactive_bg })
+              hl(0, "BufferLineTabSeparator",               { fg = p.base03, bg = inactive_bg })
               hl(0, "BufferLineTabClose",                   { fg = p.base08, bg = inactive_bg })
               hl(0, "BufferLineOffsetSeparator",            { fg = p.base02, bg = fill_bg })
 
@@ -269,19 +267,12 @@ in
               hl(0, "BufferLineHintSelected",               { fg = p.base0C, bg = active_bg, bold = true })
               hl(0, "BufferLineHintDiagnosticSelected",     { fg = p.base0C, bg = active_bg, bold = true })
               hl(0, "BufferLinePickSelected",               { fg = p.base08, bg = active_bg, bold = true })
-              -- Separators (slant, selected): fg = fill bg (the cut-through), bg = active tab body
-              hl(0, "BufferLineSeparatorSelected",          { fg = fill_bg, bg = active_bg })
+              -- Active separators highlighted with accent color
+              hl(0, "BufferLineSeparatorSelected",          { fg = p.base0D, bg = active_bg })
               hl(0, "BufferLineTabSelected",                { fg = p.base05, bg = active_bg })
-              hl(0, "BufferLineTabSeparatorSelected",       { fg = fill_bg, bg = active_bg })
+              hl(0, "BufferLineTabSeparatorSelected",       { fg = p.base0D, bg = active_bg })
 
-              -- Patch internal config so icon bg derivation uses our values,
-              -- then clear the icon cache so icons re-derive on next render.
-              local cfg_hls = require("bufferline.config").highlights
-              if cfg_hls then
-                if cfg_hls.background      then cfg_hls.background.bg      = inactive_bg end
-                if cfg_hls.buffer_visible  then cfg_hls.buffer_visible.bg  = inactive_bg end
-                if cfg_hls.buffer_selected then cfg_hls.buffer_selected.bg = active_bg   end
-              end
+              -- Reset icon cache so icons re-derive against the transparent background.
               require("bufferline.highlights").reset_icon_hl_cache()
             end
 
