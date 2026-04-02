@@ -18,6 +18,7 @@
           "battery-toolkit"
           "qmk-toolbox"
           "vial"
+          "figma"
         ];
       };
     };
