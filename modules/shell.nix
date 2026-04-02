@@ -48,5 +48,15 @@
         enable = true;
         defaultOptions = [ "--color 16" ];
       };
+
+      programs.vivid = {
+        enable = true;
+        enableZshIntegration = true;
+        activeTheme = "ansi";
+        themes.ansi = builtins.fetchurl {
+          url = "https://raw.githubusercontent.com/sharkdp/vivid/master/themes/ansi.yml";
+          sha256 = "1gv9xmdgn2pw64z4gbw02nv634lxkl0wwzv72mc717b1aw4qwcwq";
+        };
+      };
     };
 }
