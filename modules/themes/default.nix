@@ -26,7 +26,7 @@
 
       config.themes = {
         dark = inputs.base24-schemes + "/base24/gruvbox-dark.yaml";
-        light = inputs.base24-schemes + "/base24/gruvbox-light.yaml";
+        light = inputs.base24-schemes + "/base24/ayu-light.yaml";
 
         palette = lib.mapAttrs (
           _: yamlFile:
