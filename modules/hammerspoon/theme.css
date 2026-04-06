@@ -1,0 +1,27 @@
+/* ── layout constants ─────────────────────────────────────────────────
+   Edit these to adjust sizing without touching launcher.css            */
+:root {
+  --radius: 16px;
+  --shadow-space: 24px;
+  --icon-size: 32px;
+  --input-font-size: 18px;
+  --item-font-size: 15px;
+  --item-path-font-size: 11px;
+  --input-padding: 14px 16px;
+  --item-padding: 6px 16px;
+  --item-gap: 10px;
+}
+
+/* ── semantic color slots ─────────────────────────────────────────────
+   Maps raw base* vars (injected at runtime by Lua) to named roles.
+   Adjust here to remap which base color fills which role.             */
+:root {
+  --bg:     var(--base00);  /* panel background */
+  --bgAlt:  var(--base01);  /* input background */
+  --bgSel:  var(--base02);  /* selected item */
+  --dim:    var(--base03);  /* subdued text / placeholder */
+  --fg:     var(--base05);  /* primary text */
+  --accent: var(--base0D);  /* highlight / focus accent */
+  --border: var(--base01);  /* panel / input border */
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}

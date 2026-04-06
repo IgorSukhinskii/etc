@@ -1,0 +1,101 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  background: transparent;
+  padding: var(--shadow-space);
+  height: 100%;
+}
+
+body {
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  height: 100%;
+}
+
+#panel {
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+#input {
+  background: var(--bgAlt);
+  color: var(--fg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: var(--input-padding);
+  font-size: var(--input-font-size);
+  outline: none;
+  font-family: inherit;
+}
+
+#input::placeholder {
+  color: var(--dim);
+}
+
+#results {
+  overflow-y: auto;
+  flex: 1;
+}
+
+#results::-webkit-scrollbar {
+  width: 6px;
+}
+
+#results::-webkit-scrollbar-thumb {
+  background: var(--dim);
+  border-radius: 3px;
+}
+
+#results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--item-gap);
+  padding: var(--item-padding);
+  color: var(--fg);
+  cursor: default;
+}
+
+.item.selected {
+  background: var(--bgSel);
+  border-left: 3px solid var(--accent);
+  padding-left: 13px; /* 16px - 3px border */
+}
+
+.item-icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex-shrink: 0;
+}
+
+.item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.item-name {
+  font-size: var(--item-font-size);
+}
+
+.item-path {
+  color: var(--dim);
+  font-size: var(--item-path-font-size);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
