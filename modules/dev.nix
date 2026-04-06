@@ -25,6 +25,22 @@
       programs.delta = {
         enable = true;
         enableGitIntegration = true;
+        options = {
+          syntax-theme = "ansi";
+          minus-style = "brightblack normal";
+          plus-style = "syntax normal";
+          minus-emph-style = "brightred bold normal";
+          plus-emph-style = "brightgreen bold normal";
+          line-numbers = true;
+          line-numbers-minus-style = "brightred";
+          line-numbers-plus-style = "brightgreen";
+          line-numbers-zero-style = "brightblack";
+          line-numbers-left-format = "";
+          line-numbers-left-style = "brightred";
+          line-numbers-right-format = "{np:>4} ";
+          line-numbers-right-style = "brightgreen";
+          hunk-header-style = "omit";
+        };
       };
 
       programs.direnv = {
