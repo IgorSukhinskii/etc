@@ -224,7 +224,7 @@
           pluginBattery
           pluginClock
         ];
-        config = ''
+        config = /* bash */ ''
           #!${pkgs.bash}/bin/bash
 
           # ── hot-reload on config file change ────────────────────────────────
@@ -363,7 +363,7 @@
         '';
       };
 
-      home.activation.reloadSketchybar = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      home.activation.reloadSketchybar = lib.hm.dag.entryAfter [ "linkGeneration" ] /* bash */ ''
         if launchctl list org.nix-community.home.sketchybar &>/dev/null; then
           ${pkgs.sketchybar}/bin/sketchybar --reload
         fi
