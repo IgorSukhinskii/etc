@@ -32,8 +32,6 @@
 
       system.defaults.NSGlobalDomain = {
         AppleICUForce24HourTime = true;
-        AppleInterfaceStyle = "Dark";
-        AppleInterfaceStyleSwitchesAutomatically = false;
         NSAutomaticCapitalizationEnabled = false;
         NSAutomaticDashSubstitutionEnabled = false;
         NSAutomaticInlinePredictionEnabled = false;
