@@ -145,6 +145,7 @@ in
             };
             markdown = lang // {
               extraDiagnostics.enable = true;
+              lsp.servers = [ "markdown-oxide" ];
             };
             json = lang // {
               lsp.servers = [ "jsonls" ];
