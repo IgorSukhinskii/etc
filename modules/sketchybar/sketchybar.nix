@@ -1,11 +1,11 @@
 { ... }:
 {
-  # ── darwin: hide the native menu bar ──────────────────────────────────────
+  # ── darwin: auto-hide native menu bar (sketchybar replaces it visually) ────
   flake.darwinModules.sketchybar =
     { pkgs, ... }:
     {
       system.defaults.NSGlobalDomain._HIHideMenuBar = true;
-      fonts.packages = [ pkgs.nerd-fonts.hack ]; # kept for non-apple icons
+      fonts.packages = [ pkgs.nerd-fonts.symbols-only ]; # kept for non-apple icons
       homebrew.casks = [
         "sf-symbols" # SF Symbols app
         "font-sf-pro" # installs "SF Pro Display" and "SF Pro Text" families
@@ -21,27 +21,36 @@
       ...
     }:
     let
-      c = config.themes.palette.dark;
+      dc = config.themes.palette.dark;
+      lc = config.themes.palette.light;
 
-      # sketchybar color format: "0xff" + 6-digit hex (no #)
-      # Names follow the base24 spec — stable across all themes
-      clrBg = "0xff${c.base00}"; # default background
-      clrBgAlt = "0xff${c.base01}"; # lighter background
-      clrDim = "0xff${c.base03}"; # comments / dimmed
-      clrFg = "0xff${c.base05}"; # default foreground
-      clrRed = "0xff${c.base08}"; # red   (errors/deleted)
-      clrOrange = "0xff${c.base09}"; # orange (constants)
-      clrYellow = "0xff${c.base0A}"; # yellow (warnings)
-      clrGreen = "0xff${c.base0B}"; # green  (strings/success)
-      clrCyan = "0xff${c.base0C}"; # cyan   (support)
-      clrBlue = "0xff${c.base0D}"; # blue   (functions)
-      clrViolet = "0xff${c.base0E}"; # violet (keywords)
+      mkClr = palette: key: "0xff${palette.${key}}";
+
+      # Map semantic names → base24 keys (same key for both polarities)
+      colorMap = {
+        CLR_BG = "base00";
+        CLR_BGALT = "base01";
+        CLR_DIM = "base03";
+        CLR_FG = "base05";
+        CLR_RED = "base08";
+        CLR_ORANGE = "base09";
+        CLR_YELLOW = "base0A";
+        CLR_GREEN = "base0B";
+        CLR_CYAN = "base0C";
+        CLR_BLUE = "base0D";
+        CLR_VIOLET = "base0E";
+      };
+
+      # Render one palette branch as shell assignments
+      mkBranch =
+        palette:
+        lib.concatStrings (lib.mapAttrsToList (name: key: "  ${name}=\"${mkClr palette key}\"\n") colorMap);
 
       # ── fonts ──────────────────────────────────────────────────────────────
       fontIcon = "SF Pro Display:Regular";
       fontLabel = "SF Pro Text:Regular";
       fontSys = ".SF NS:Regular";
-      fontNF = "Hack Nerd Font:Regular";
+      fontNF = "Symbols Nerd Font:Regular";
 
       # ── icons ──────────────────────────────────────────────────────────────
       # Nix regular strings: "$'\\uXXXX'" → bash $'\uXXXX' → glyph
@@ -63,49 +72,56 @@
       pluginVolume = pkgs.writeShellApplication {
         name = "sketchybar-volume";
         runtimeInputs = [ pkgs.sketchybar ];
+        excludeShellChecks = [ "SC1091" ];
         text = ''
+          source "$HOME/.config/sketchybar/colors.sh"
+
           VOL=$(osascript -e "output volume of (get volume settings)")
           MUTED=$(osascript -e "output muted of (get volume settings)")
 
           if [ "$MUTED" = "true" ]; then
             ICON=${icoVolOff}
-            COLOR="${clrDim}"
+            COLOR="$CLR_DIM"
           elif [ "$VOL" -gt 66 ]; then
             ICON=${icoVolHi}
-            COLOR="${clrBlue}"
+            COLOR="$CLR_BLUE"
           elif [ "$VOL" -gt 33 ]; then
             ICON=${icoVolMed}
-            COLOR="${clrBlue}"
+            COLOR="$CLR_BLUE"
           else
             ICON=${icoVolOff}
-            COLOR="${clrBlue}"
+            COLOR="$CLR_BLUE"
           fi
 
           sketchybar --set "$NAME" \
             icon="$ICON" \
             icon.color="$COLOR" \
-            label="$VOL%"
+            label="$VOL%" \
+            label.color="$CLR_FG" \
+            background.color="$CLR_BGALT"
         '';
       };
 
       pluginWifi = pkgs.writeShellApplication {
         name = "sketchybar-wifi";
         runtimeInputs = [ pkgs.sketchybar ];
+        excludeShellChecks = [ "SC1091" ];
         text = ''
+          source "$HOME/.config/sketchybar/colors.sh"
+
           ADDR=$(ipconfig getifaddr en0 2>/dev/null)
 
           if [ -z "$ADDR" ]; then
-            COLOR="${clrDim}"
-            LABEL="off"
+            COLOR="$CLR_DIM"
           else
-            COLOR="${clrCyan}"
-            LABEL="on"
+            COLOR="$CLR_CYAN"
           fi
 
           sketchybar --set "$NAME" \
             icon=${icoWifi} \
             icon.color="$COLOR" \
-            label="$LABEL"
+            label.color="$CLR_FG" \
+            background.color="$CLR_BGALT"
         '';
       };
 
@@ -116,7 +132,10 @@
           pkgs.blueutil
           pkgs.switchaudio-osx
         ];
+        excludeShellChecks = [ "SC1091" ];
         text = ''
+          source "$HOME/.config/sketchybar/colors.sh"
+
           POWER=$(blueutil --power)
           CONNECTED=$(blueutil --connected | wc -l | tr -d ' ')
 
@@ -146,30 +165,29 @@
           done
 
           if [ "$POWER" = "0" ]; then
-            COLOR="${clrDim}"
-            LABEL="off"
+            COLOR="$CLR_DIM"
           elif [ "$CONNECTED" -gt 0 ] && [ "$BT_AUDIO" = "true" ]; then
-            COLOR="${clrGreen}"
-            LABEL="$CONNECTED"
+            COLOR="$CLR_GREEN"
           elif [ "$CONNECTED" -gt 0 ]; then
-            COLOR="${clrViolet}"
-            LABEL="$CONNECTED"
+            COLOR="$CLR_VIOLET"
           else
-            COLOR="${clrViolet}"
-            LABEL="on"
+            COLOR="$CLR_VIOLET"
           fi
 
           sketchybar --set "$NAME" \
             icon=${icoBt} \
             icon.color="$COLOR" \
-            label="$LABEL"
+            background.color="$CLR_BGALT"
         '';
       };
 
       pluginBattery = pkgs.writeShellApplication {
         name = "sketchybar-battery";
         runtimeInputs = [ pkgs.sketchybar ];
+        excludeShellChecks = [ "SC1091" ];
         text = ''
+          source "$HOME/.config/sketchybar/colors.sh"
+
           BATT_INFO=$(pmset -g batt)
           PERCENT=$(echo "$BATT_INFO" | grep -o '[0-9]*%' | head -1 | tr -d '%')
           PLUGGED=$(echo "$BATT_INFO" | grep -c 'AC Power' || true)
@@ -177,39 +195,62 @@
 
           if [ "$PLUGGED" -gt 0 ] && [ "$CHARGING" -gt 0 ]; then
             ICON=${icoPlug}
-            COLOR="${clrGreen}"
+            COLOR="$CLR_GREEN"
           elif [ "$PERCENT" -ge 75 ]; then
             ICON=${icoBatF}
-            COLOR="${clrGreen}"
+            COLOR="$CLR_GREEN"
           elif [ "$PERCENT" -ge 50 ]; then
             ICON=${icoBat34}
-            COLOR="${clrGreen}"
+            COLOR="$CLR_GREEN"
           elif [ "$PERCENT" -ge 25 ]; then
             ICON=${icoBatH}
-            COLOR="${clrOrange}"
+            COLOR="$CLR_ORANGE"
           elif [ "$PERCENT" -ge 10 ]; then
             ICON=${icoBat14}
-            COLOR="${clrRed}"
+            COLOR="$CLR_RED"
           else
             ICON=${icoBatE}
-            COLOR="${clrRed}"
+            COLOR="$CLR_RED"
           fi
 
           sketchybar --set "$NAME" \
             icon="$ICON" \
             icon.color="$COLOR" \
-            label="$PERCENT%"
+            label="$PERCENT%" \
+            label.color="$CLR_FG" \
+            background.color="$CLR_BGALT"
         '';
       };
 
       pluginClock = pkgs.writeShellApplication {
         name = "sketchybar-clock";
         runtimeInputs = [ pkgs.sketchybar ];
+        excludeShellChecks = [ "SC1091" ];
         text = ''
+          source "$HOME/.config/sketchybar/colors.sh"
+
           sketchybar --set "$NAME" \
             icon=${icoClock} \
-            icon.color="${clrYellow}" \
-            label="$(date '+%H:%M  %a %d %b')"
+            icon.color="$CLR_YELLOW" \
+            label="$(date '+%H:%M  %a %d %b')" \
+            label.color="$CLR_FG" \
+            background.color="$CLR_BGALT"
+        '';
+      };
+
+      pluginTheme = pkgs.writeShellApplication {
+        name = "sketchybar-theme";
+        runtimeInputs = [ pkgs.sketchybar ];
+        excludeShellChecks = [ "SC1091" ];
+        text = ''
+          source "$HOME/.config/sketchybar/colors.sh"
+
+          sketchybar --bar color=0x00000000 \
+            --default icon.color="$CLR_FG" label.color="$CLR_FG" \
+            --set '/.*/' background.color="$CLR_BGALT" label.color="$CLR_FG" \
+            --set apple icon.color="$CLR_VIOLET" background.drawing=off \
+            --set sys_group background.color="$CLR_BGALT" \
+            --set net_group background.color="$CLR_BGALT"
         '';
       };
 
@@ -223,12 +264,18 @@
           pluginBluetooth
           pluginBattery
           pluginClock
+          pluginTheme
         ];
         config = /* bash */ ''
           #!${pkgs.bash}/bin/bash
 
+          source "$HOME/.config/sketchybar/colors.sh"
+
           # ── hot-reload on config file change ────────────────────────────────
           sketchybar --hotload true
+
+          # ── theme: register event before any items subscribe to it ─────────
+          sketchybar --add event theme_change AppleInterfaceThemeChangedNotification
 
           # ── bar geometry & appearance ───────────────────────────────────────
           sketchybar --bar \
@@ -237,7 +284,7 @@
             sticky=on \
             padding_left=12 \
             padding_right=12 \
-            color=${clrBg} \
+            color=0x00000000 \
             border_width=0 \
             corner_radius=0 \
             blur_radius=0 \
@@ -245,10 +292,10 @@
 
           # ── global item defaults ────────────────────────────────────────────
           sketchybar --default \
-            icon.font="${fontNF}:16.0" \
-            icon.color=${clrFg} \
-            label.font="${fontNF}:13.0" \
-            label.color=${clrFg} \
+            icon.font="${fontNF}:24.0" \
+            icon.color="$CLR_FG" \
+            label.font="${fontLabel}:24.0" \
+            label.color="$CLR_FG" \
             label.padding_left=4 \
             label.padding_right=6 \
             icon.padding_left=6 \
@@ -262,11 +309,11 @@
           sketchybar --add item apple left \
             --set apple \
               icon=${icoApple} \
-              icon.color=${clrViolet} \
-              # icon.font="${fontSys}:18.0" \
+              icon.color="$CLR_VIOLET" \
               icon.padding_left=4 \
               icon.padding_right=4 \
               label.drawing=off \
+              label.color=0x00000000 \
               background.drawing=off \
               click_script="open -a 'System Settings'"
 
@@ -275,27 +322,29 @@
             --set clock \
               update_freq=10 \
               script="sketchybar-clock" \
-              background.color=${clrBgAlt} \
+              background.color="$CLR_BGALT" \
               background.drawing=on \
-              icon.color=${clrYellow} \
-              label.color=${clrFg}
+              icon.color="$CLR_YELLOW" \
+              label.color="$CLR_FG" \
+            --subscribe clock theme_change
 
           # ── RIGHT: battery ──────────────────────────────────────────────────
           sketchybar --add item battery right \
             --set battery \
               update_freq=60 \
               script="sketchybar-battery" \
-              label.width=32 \
+              label.width=60 \
               label.align=right \
-              background.color=${clrBgAlt} \
-              background.drawing=on
+              background.color="$CLR_BGALT" \
+              background.drawing=on \
+            --subscribe battery theme_change
 
           # ── RIGHT: system group bracket (battery + clock) ───────────────────
           sketchybar --add bracket sys_group battery clock \
             --set sys_group \
-              background.color=${clrBgAlt} \
-              background.corner_radius=12 \
-              background.height=24 \
+              background.color="$CLR_BGALT" \
+              background.corner_radius=8 \
+              background.height=32 \
               background.drawing=on
 
           # ── RIGHT: bluetooth ────────────────────────────────────────────────
@@ -303,11 +352,10 @@
             --set bluetooth \
               update_freq=30 \
               script="sketchybar-bluetooth" \
-              label.width=28 \
-              label.align=right \
               click_script="sketchybar --set \$NAME popup.drawing=toggle" \
-              background.color=${clrBgAlt} \
-              background.drawing=on
+              background.color="$CLR_BGALT" \
+              background.drawing=on \
+            --subscribe bluetooth theme_change
 
           # ── bluetooth popup: up to 3 connected device name slots ────────────
           sketchybar --add item bt_dev1 popup.bluetooth \
@@ -333,40 +381,45 @@
             --set wifi \
               update_freq=30 \
               script="sketchybar-wifi" \
-              label.width=28 \
-              label.align=right \
-              background.color=${clrBgAlt} \
-              background.drawing=on
+              label.drawing=off \
+              background.color="$CLR_BGALT" \
+              background.drawing=on \
+            --subscribe wifi theme_change
 
           # ── RIGHT: volume ───────────────────────────────────────────────────
           sketchybar --add item volume right \
             --set volume \
               script="sketchybar-volume" \
-              label.width=32 \
+              label.width=60 \
               label.align=right \
-              background.color=${clrBgAlt} \
-              background.drawing=on
-
-          # Volume updates on system audio change events (no polling needed)
-          sketchybar --subscribe volume volume_change
+              background.color="$CLR_BGALT" \
+              background.drawing=on \
+            --subscribe volume volume_change theme_change
 
           # ── RIGHT: network group bracket (volume + wifi + bluetooth) ────────
           sketchybar --add bracket net_group volume wifi bluetooth \
             --set net_group \
-              background.color=${clrBgAlt} \
-              background.corner_radius=12 \
-              background.height=24 \
+              background.color="$CLR_BGALT" \
+              background.corner_radius=8 \
+              background.height=32 \
               background.drawing=on
+
+          # ── theme: sentinel for static elements (bar, brackets, apple) ─────
+          sketchybar --add item theme_sentinel left \
+            --set theme_sentinel \
+              drawing=off \
+              script="sketchybar-theme" \
+            --subscribe theme_sentinel theme_change
 
           # ── trigger initial run of all scripts ──────────────────────────────
           sketchybar --update
         '';
       };
 
-      home.activation.reloadSketchybar = lib.hm.dag.entryAfter [ "linkGeneration" ] /* bash */ ''
-        if launchctl list org.nix-community.home.sketchybar &>/dev/null; then
-          ${pkgs.sketchybar}/bin/sketchybar --reload
-        fi
+      home.file.".config/sketchybar/colors.sh".text = ''
+        if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" = "Dark" ]; then
+        ${mkBranch dc}else
+        ${mkBranch lc}fi
       '';
     };
 }
