@@ -7,6 +7,11 @@
 
       programs.fd.enable = true;
 
+      programs.gh = {
+        enable = true;
+        settings.git_protocol = "ssh";
+      };
+
       programs.lsd = {
         enable = true;
         colors = {
