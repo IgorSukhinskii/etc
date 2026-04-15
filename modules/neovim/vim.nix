@@ -163,6 +163,7 @@ in
               lsp.enable = true;
               treesitter.enable = true;
             };
+            rust = lang;
           };
           luaConfigRC.tinted-polarity = nvfDag.entryBefore [ "pluginConfigs" ] (
             builtins.replaceStrings [ "__DARK_SCHEME__" "__LIGHT_SCHEME__" ] [ dark_scheme light_scheme ] (
