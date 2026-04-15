@@ -68,7 +68,19 @@ in
           pluginOverrides.nvim-lightbulb = pkgs.vimPlugins.nvim-lightbulb;
           startPlugins = with pkgs.vimPlugins; [
             SchemaStore-nvim
-            tinted-nvim
+            # Guard vim.o.background assignment in tinted.load() so it only fires
+            # after VimEnter. Without this, calling tinted.load() during the VIMINIT
+            # script chain sets background with the script's SID (not -8), causing
+            # Neovim 0.12's VimEnter check to delete the built-in TermResponse
+            # background-detection autocmd, breaking automatic dark/light switching.
+            (tinted-nvim.overrideAttrs (_: {
+              postPatch = ''
+                substituteInPlace lua/tinted-nvim/init.lua \
+                  --replace-fail \
+                    'vim.o.background = palette.variant' \
+                    'if vim.v.vim_did_enter == 1 then vim.o.background = palette.variant end'
+              '';
+            }))
           ];
           clipboard = {
             enable = true;
