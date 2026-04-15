@@ -16,6 +16,7 @@
           macos-titlebar-style = "hidden";
           macos-option-as-alt = "left";
           background-opacity = 0.9;
+          background-opacity-cells = true;
           font-family = "JetBrainsMono Nerd Font";
           theme = "dark:gruvbox-dark,light:gruvbox-light";
           # ghostty `unbind` removes its own action but macOS text-input has no
