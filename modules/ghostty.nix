@@ -8,6 +8,9 @@
 
   flake.homeManagerModules.terminal =
     { pkgs, ... }:
+    let
+      opacity = 1.0;
+    in
     {
       programs.ghostty = {
         enable = true;
@@ -15,7 +18,7 @@
         settings = {
           macos-titlebar-style = "hidden";
           macos-option-as-alt = "left";
-          background-opacity = 0.9;
+          background-opacity = opacity;
           background-opacity-cells = true;
           font-family = "JetBrainsMono Nerd Font";
           theme = "dark:gruvbox-dark,light:gruvbox-light";

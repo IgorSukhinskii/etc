@@ -44,10 +44,8 @@
 
       config.themes = {
         dark = {
-          inherit (hard) # hard bg for higher contrast
-            base00
-            ;
           inherit (gruvbox24) # default gradient
+            base00
             base01
             base02
             base03
