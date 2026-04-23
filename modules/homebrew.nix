@@ -19,6 +19,7 @@
           "qmk-toolbox"
           "vial"
           "figma"
+          "windows-app"
         ];
       };
     };
