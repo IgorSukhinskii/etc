@@ -2,7 +2,7 @@
 {
   flake.homeManagerModules.openwhispr =
     { pkgs, lib, ... }:
-    {
+    lib.mkIf pkgs.stdenv.isDarwin {
       home.activation.openwhispr = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         /usr/bin/xattr -cr "$HOME/Applications/Home Manager Apps/OpenWhispr.app" 2>/dev/null || true
       '';
