@@ -12,7 +12,7 @@
       darkVars = lib.mapAttrs' (n: v: lib.nameValuePair "dark_${n}" v) config.themes.palette.dark;
       lightVars = lib.mapAttrs' (n: v: lib.nameValuePair "light_${n}" v) config.themes.palette.light;
     in
-    {
+    lib.mkIf pkgs.stdenv.isDarwin {
       home.packages = [ pkgs.tridactyl-native ];
 
       # Native messaging manifest — standard Firefox path (Zen Browser uses the same)

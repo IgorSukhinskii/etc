@@ -7,11 +7,11 @@
     };
 
   flake.homeManagerModules.terminal =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     let
       opacity = 1.0;
     in
-    {
+    lib.mkIf pkgs.stdenv.isDarwin {
       programs.ghostty = {
         enable = true;
         package = pkgs.ghostty-bin;

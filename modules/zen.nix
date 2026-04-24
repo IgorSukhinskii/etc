@@ -8,6 +8,7 @@
       ...
     }:
     let
+      isDarwin = pkgs.stdenv.isDarwin;
       mkCssVars =
         prefix: p:
         lib.concatStrings (
@@ -16,7 +17,7 @@
           )
         );
     in
-    {
+    lib.mkIf isDarwin {
       programs.zen-browser = {
         enable = true;
 

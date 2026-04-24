@@ -8,13 +8,13 @@
       ];
     };
   flake.homeManagerModules.copilot =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     let
       copilotWrapper = pkgs.writeShellScriptBin "copilot" ''
         /opt/homebrew/bin/copilot "$@"
       '';
     in
-    {
+    lib.mkIf pkgs.stdenv.isDarwin {
       home.packages = [ copilotWrapper ];
     };
 }

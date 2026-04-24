@@ -1,7 +1,7 @@
 { ... }:
 {
   flake.homeManagerModules.dev =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     {
       programs.git = {
         enable = true;
@@ -74,10 +74,12 @@
         };
       };
 
-      home.packages = with pkgs; [
-        colima
-        docker
-        devenv
-      ];
+      home.packages =
+        with pkgs;
+        [
+          docker
+          devenv
+        ]
+        ++ lib.optionals stdenv.isDarwin [ colima ];
     };
 }

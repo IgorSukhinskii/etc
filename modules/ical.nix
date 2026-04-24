@@ -1,8 +1,8 @@
 { ... }:
 {
   flake.homeManagerModules.ical =
-    { pkgs, ... }:
-    {
+    { pkgs, lib, ... }:
+    lib.mkIf pkgs.stdenv.isDarwin {
       home.packages = [
         (pkgs.stdenvNoCC.mkDerivation {
           name = "ical-0.7.0";

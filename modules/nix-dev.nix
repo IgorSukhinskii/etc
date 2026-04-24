@@ -94,7 +94,11 @@
         flake_dir="${flakeDir}"
         hostname=$(hostname -s | tr '[:upper:]' '[:lower:]')
 
-        exec sudo darwin-rebuild switch --flake "''${flake_dir}#''${hostname}"
+        if [[ "$(uname -s)" == "Darwin" ]]; then
+          exec sudo darwin-rebuild switch --flake "''${flake_dir}#''${hostname}"
+        else
+          exec sudo nixos-rebuild switch --flake "''${flake_dir}#''${hostname}"
+        fi
       '';
 
       nixfmtHook = pkgs.writeShellScript "pre-commit-nixfmt" ''
@@ -111,15 +115,17 @@
       '';
     in
     {
-      home.packages = with pkgs; [
-        ripgrep
-        nixd
-        nixfmt
-        nixHmModule
-        nixDarwinModule
-        nixSrcSearch
-        nixRebuild
-      ];
+      home.packages =
+        with pkgs;
+        [
+          ripgrep
+          nixd
+          nixfmt
+          nixHmModule
+          nixSrcSearch
+          nixRebuild
+        ]
+        ++ lib.optionals stdenv.isDarwin [ nixDarwinModule ];
 
       # Neovim nix language support — colocated here so formatter stays in sync
       # with the pre-commit hook below. Both use nixfmt (RFC 166 style).

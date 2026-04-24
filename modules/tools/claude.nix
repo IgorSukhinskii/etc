@@ -8,8 +8,10 @@
       ];
     };
   flake.homeManagerModules.claude =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     let
+      claudeBin =
+        if pkgs.stdenv.isDarwin then "/opt/homebrew/bin/claude" else "${pkgs.claude-code}/bin/claude";
       claudeWrapper = pkgs.writeShellScriptBin "claude" ''
         export DISABLE_AUTOUPDATER=1
         if [ -n "$TMUX" ]; then
@@ -18,7 +20,7 @@
           # on exit, let tmux know that we no longer accept extkeys
           trap 'printf "\033[>4;0m"' EXIT
         fi
-        /opt/homebrew/bin/claude "$@"
+        ${claudeBin} "$@"
       '';
       askClaude = pkgs.writeShellScriptBin "ask-claude" ''
         if [ $# -eq 0 ]; then
@@ -39,7 +41,7 @@
 
       programs.claude-code = {
         enable = true;
-        package = null;
+        package = if pkgs.stdenv.isDarwin then null else pkgs.claude-code;
         settings = {
           showClearContextOnPlanAccept = true;
           enabledPlugins = {

@@ -1,7 +1,7 @@
 { ... }:
 {
   flake.homeManagerModules.tools =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     {
       programs.bat.enable = true;
 
@@ -102,10 +102,13 @@
 
       programs.ripgrep.enable = true;
 
-      home.packages = with pkgs; [
-        qmk
-        telegram-desktop
-        brave
-      ];
+      home.packages =
+        with pkgs;
+        [ ]
+        ++ lib.optionals stdenv.isDarwin [
+          qmk
+          telegram-desktop
+          brave
+        ];
     };
 }

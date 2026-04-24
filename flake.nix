@@ -32,6 +32,10 @@
       url = "github:not-in-stock/kanata-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixos-wsl = {
+      url = "github:nix-community/NixOS-WSL";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -45,6 +49,7 @@
       imports = [
         (inputs.import-tree ./modules)
         ./hosts/mac/flake-module.nix
+        ./hosts/wsl/flake-module.nix
       ];
     };
 }
