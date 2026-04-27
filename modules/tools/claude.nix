@@ -41,7 +41,7 @@
 
       programs.claude-code = {
         enable = true;
-        package = if pkgs.stdenv.isDarwin then null else pkgs.claude-code;
+        package = null;
         settings = {
           showClearContextOnPlanAccept = true;
           enabledPlugins = {
