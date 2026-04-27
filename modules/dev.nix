@@ -43,11 +43,6 @@
         };
       };
 
-      programs.direnv = {
-        enable = true;
-        silent = true;
-      };
-
       programs.lazygit = {
         enable = true;
         enableZshIntegration = false;
