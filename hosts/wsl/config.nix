@@ -24,11 +24,14 @@ in
 
     # Docker daemon (no colima needed on Linux)
     virtualisation.docker.enable = true;
-    users.users.${username}.extraGroups = [ "docker" ];
 
     # Enable zsh system-wide so it appears in /etc/shells
     programs.zsh.enable = true;
-    users.users.${username}.shell = pkgs.zsh;
+
+    users.users.${username} = {
+      extraGroups = [ "docker" ];
+      shell = pkgs.zsh;
+    };
 
     # Allow unpatched ELF binaries (ad-hoc downloaded CLIs)
     programs.nix-ld.enable = true;
