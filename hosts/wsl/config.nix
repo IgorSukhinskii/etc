@@ -36,9 +36,9 @@ in
     # Allow unpatched ELF binaries (ad-hoc downloaded CLIs)
     programs.nix-ld.enable = true;
 
+    system.stateVersion = stateVersion;
+
     home-manager.users.${username} = {
-      home.username = username;
-      home.homeDirectory = homeDirectory;
       home.stateVersion = stateVersion;
       programs.home-manager.enable = true;
     };
