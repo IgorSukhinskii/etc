@@ -8,7 +8,7 @@
       ...
     }:
     let
-      isDarwin = pkgs.stdenv.isDarwin;
+      isDarwin = builtins.match ".*-darwin" builtins.currentSystem != null;
       mkCssVars =
         prefix: p:
         lib.concatStrings (
