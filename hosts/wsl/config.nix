@@ -17,7 +17,6 @@ in
     # WSL
     wsl.enable = true;
     wsl.defaultUser = username;
-    wsl.nativeSystemd = true;
     wsl.interop.register = true;
     wsl.interop.includePath = true;
     wsl.wslConf.automount.options = "metadata,uid=1000,gid=100,umask=22,fmask=11";
