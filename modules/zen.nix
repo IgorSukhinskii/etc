@@ -2,13 +2,13 @@
 {
   flake.homeManagerModules.zen =
     {
+      isDarwin,
       pkgs,
       lib,
       config,
       ...
     }:
     let
-      isDarwin = builtins.match ".*-darwin" builtins.currentSystem != null;
       mkCssVars =
         prefix: p:
         lib.concatStrings (

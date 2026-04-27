@@ -11,6 +11,9 @@
       {
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
+        home-manager.extraSpecialArgs = {
+          isDarwin = false;
+        };
         home-manager.sharedModules = (builtins.attrValues inputs.self.homeManagerModules) ++ [
           inputs.nvf.homeManagerModules.default
           # zen-browser intentionally omitted (headless)
