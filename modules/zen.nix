@@ -17,7 +17,7 @@
           )
         );
     in
-    lib.mkIf isDarwin {
+    lib.optionalAttrs isDarwin {
       programs.zen-browser = {
         enable = true;
 

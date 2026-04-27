@@ -39,7 +39,7 @@
         /opt/homebrew/bin/brew cleanup
       '';
     in
-    lib.mkIf pkgs.stdenv.isDarwin {
+    lib.optionalAttrs pkgs.stdenv.isDarwin {
       launchd.agents.brew-cask-update = {
         enable = true;
         config = {
