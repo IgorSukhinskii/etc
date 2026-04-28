@@ -37,6 +37,7 @@
         config.window_decorations = 'RESIZE'
         config.enable_tab_bar = false
         config.enable_kitty_keyboard = true
+        config.audible_bell = 'Disabled'
         config.font = wezterm.font('JetBrainsMono Nerd Font')
 
         -- wezterm's default ctrl+tab / ctrl+shift+tab swap tabs; we have no
