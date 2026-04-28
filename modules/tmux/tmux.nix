@@ -290,6 +290,8 @@
           pkgs.nushell
         ];
 
+        home.shellAliases.mux = "tmux new -A -s default -c ~/";
+
         programs.tmux = {
           enable = true;
           keyMode = "vi";
