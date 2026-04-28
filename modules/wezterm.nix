@@ -61,6 +61,15 @@
             selection_fg  = p.base05,
             ansi    = { p.base00, p.base08, p.base0B, p.base0A, p.base0D, p.base0E, p.base0C, p.base05 },
             brights = { p.base03, p.base12, p.base14, p.base13, p.base16, p.base17, p.base15, p.base07 },
+            -- Extra base24 slots, mirrors modules/themes/ghostty.nix indices 16-21.
+            indexed = {
+              [16] = p.base09,
+              [17] = p.base0F,
+              [18] = p.base01,
+              [19] = p.base02,
+              [20] = p.base04,
+              [21] = p.base06,
+            },
           }
         end
 
