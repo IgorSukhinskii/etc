@@ -14,6 +14,10 @@ in
   config = {
     host = { inherit username homeDirectory stateVersion; };
 
+    # Match the flake attr name (hosts/wsl/ → nixosConfigurations.wsl) so
+    # nix-rebuild's `hostname -s` lookup resolves correctly.
+    networking.hostName = "wsl";
+
     # WSL
     wsl.enable = true;
     wsl.defaultUser = username;
