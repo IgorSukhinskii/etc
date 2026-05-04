@@ -104,7 +104,7 @@
 
       home.packages =
         with pkgs;
-        [ ]
+        [ azure-cli ]
         ++ lib.optionals stdenv.isDarwin [
           qmk
           telegram-desktop

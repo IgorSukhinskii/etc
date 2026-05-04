@@ -147,6 +147,7 @@ in
           binds.whichKey.enable = true;
           languages = {
             enableDAP = true;
+            enableTreesitter = true;
             python = lang // {
               lsp.enable = false;
             };
@@ -176,6 +177,9 @@ in
               treesitter.enable = true;
             };
             rust = lang;
+            wgsl = {
+              enable = true;
+            };
           };
           luaConfigRC.tinted-polarity = nvfDag.entryBefore [ "pluginConfigs" ] (
             builtins.replaceStrings [ "__DARK_SCHEME__" "__LIGHT_SCHEME__" ] [ dark_scheme light_scheme ] (
