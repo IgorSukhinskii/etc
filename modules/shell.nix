@@ -42,7 +42,12 @@
 
       programs.nix-your-shell = {
         enable = true;
+        enableZshIntegration = false;
       };
+
+      programs.zsh.initContent = ''
+        eval "$(nix-your-shell zsh)"
+      '';
 
       programs.fzf = {
         enable = true;
