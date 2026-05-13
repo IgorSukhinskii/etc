@@ -1,8 +1,11 @@
 { ... }:
 {
   flake.homeManagerModules.opencode =
-    { pkgs, lib, ... }:
+    { ... }:
     {
-      programs.opencode.enable = true;
+      programs.opencode = {
+        enable = true;
+        enableMcpIntegration = true;
+      };
     };
 }
