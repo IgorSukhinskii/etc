@@ -10,7 +10,7 @@
         }
         {
           name = "ai";
-          cmd = "claude";
+          cmd = "claude --dangerously-skip-permissions";
         }
         {
           name = "git";
