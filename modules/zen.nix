@@ -178,8 +178,25 @@
 
             #zen-appcontent-navbar-container { background-color: var(--base00) !important; }
 
-            #contentAreaContextMenu menu, menuitem, menupopup {
+            menupopup {
+              --panel-background: var(--base01) !important;
+              --panel-color:      var(--base05) !important;
+              background-color:   var(--base01) !important;
+              color:              var(--base05) !important;
+            }
+
+            .menupopup-arrowscrollbox {
+              background-color: var(--base01) !important;
+            }
+
+            menuitem, menu {
               color: var(--base05) !important;
+            }
+
+            menuitem:hover, menuitem[_moz-menuactive="true"],
+            menu:hover,     menu[_moz-menuactive="true"] {
+              background-color: var(--base0D) !important;
+              color:            var(--base00) !important;
             }
 
             /* Container identity colors */
