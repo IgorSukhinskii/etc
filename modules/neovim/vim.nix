@@ -151,7 +151,7 @@ in
             python = lang // {
               lsp.enable = false;
             };
-            ts = lang;
+            typescript = lang;
             bash = lang;
             lua = lang;
             yaml = {
@@ -164,7 +164,7 @@ in
               lsp.servers = [ "markdown-oxide" ];
             };
             json = lang // {
-              lsp.servers = [ "jsonls" ];
+              lsp.servers = [ "vscode-json-language-server" ];
             };
             nu = {
               enable = true;
