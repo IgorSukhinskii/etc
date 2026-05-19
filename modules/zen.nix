@@ -1,5 +1,11 @@
 { ... }:
 {
+  flake.darwinModules.zen =
+    { ... }:
+    {
+      homebrew.casks = [ "zen" ];
+    };
+
   flake.homeManagerModules.zen =
     {
       isDarwin,
@@ -18,8 +24,10 @@
         );
     in
     lib.optionalAttrs isDarwin {
+
       programs.zen-browser = {
         enable = true;
+        package = null;
 
         darwinDefaultsId = lib.mkIf pkgs.stdenv.isDarwin "app.zen-browser.zen";
 
