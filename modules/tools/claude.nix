@@ -20,7 +20,7 @@
           # on exit, let tmux know that we no longer accept extkeys
           trap 'printf "\033[>4;0m"' EXIT
         fi
-        ${claudeBin} "$@"
+        ${claudeBin} --dangerously-skip-permissions "$@"
       '';
       askClaude = pkgs.writeShellScriptBin "ask-claude" ''
         if [ $# -eq 0 ]; then
