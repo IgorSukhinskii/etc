@@ -37,8 +37,6 @@
       ];
       home.shellAliases."??" = "ask-claude";
 
-      home.file.".claude/settings.json".force = true;
-
       programs.claude-code = {
         enable = true;
         package = null;

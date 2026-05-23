@@ -21,3 +21,8 @@ end
 -- reload: URL handler (triggered by nix-rebuild) + hotkey
 hs.urlevent.bind("reload", function() hs.reload() end)
 hs.hotkey.bind({ "ctrl", "alt", "cmd", "shift" }, "r", hs.reload)
+
+-- hyper+t → Ghostty  (replaces skhd: hyper - t)
+hs.hotkey.bind({ "ctrl", "alt", "cmd", "shift" }, "t", function()
+  hs.application.launchOrFocus("Ghostty")
+end)
