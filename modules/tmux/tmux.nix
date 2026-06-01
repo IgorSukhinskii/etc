@@ -299,7 +299,18 @@
           baseIndex = 1;
           escapeTime = 0;
           terminal = "tmux-256color";
-          extraConfig = terminalConfig + keymapConfig + statuslineConfig;
+          # Clear __HM_SESS_VARS_SOURCED from tmux's server environment so that
+          # each new pane gets a fresh run of hm-session-vars.sh (picking up any
+          # new session variables added by a nix-rebuild). Without this, the tmux
+          # server inherits the guard from the shell that started it and new panes
+          # always skip re-sourcing. Subshells within a pane are unaffected because
+          # the guard is set normally once the pane's own shell has sourced the file.
+          extraConfig = ''
+            set-environment -gu __HM_SESS_VARS_SOURCED
+          ''
+          + terminalConfig
+          + keymapConfig
+          + statuslineConfig;
         };
       };
     };
