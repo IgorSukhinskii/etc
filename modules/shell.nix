@@ -9,6 +9,8 @@
 
       home.shellAliases = {
         v = "nvim";
+        iosevka-build = "bash ${config.home.homeDirectory}/etc/iosevka/build.sh";
+        iosevka-setup = "bash ${config.home.homeDirectory}/etc/iosevka/setup.sh";
       };
 
       programs.zsh = {
