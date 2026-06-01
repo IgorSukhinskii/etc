@@ -8,7 +8,12 @@
       ];
     };
   flake.homeManagerModules.claude =
-    { pkgs, lib, ... }:
+    {
+      pkgs,
+      lib,
+      config,
+      ...
+    }:
     let
       claudeBin =
         if pkgs.stdenv.isDarwin then "/opt/homebrew/bin/claude" else "${pkgs.claude-code}/bin/claude";
@@ -40,6 +45,7 @@
       programs.claude-code = {
         enable = true;
         package = null;
+        configDir = "${config.xdg.configHome}/claude";
         settings = {
           showClearContextOnPlanAccept = true;
           enabledPlugins = {
