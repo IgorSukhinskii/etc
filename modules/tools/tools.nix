@@ -83,6 +83,10 @@
               4
             ];
           };
+          preview = {
+            max_width = 1800;
+            max_height = 2600;
+          };
         };
         initLua = /* lua */ ''
           require("auto-layout").setup({
