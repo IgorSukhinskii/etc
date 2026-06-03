@@ -63,7 +63,12 @@ in
           vimAlias = true;
           # Keep the CLI on PATH for health checks and parser tooling, even though
           # parsers themselves are primarily supplied declaratively by Nix.
-          extraPackages = [ pkgs.tree-sitter ];
+          extraPackages = [
+            pkgs.tree-sitter
+            pkgs.imagemagick
+            pkgs.poppler-utils
+            pkgs.ghostscript
+          ];
           # Prefer the newer nixpkgs package until nvf's bundled lightbulb source catches up.
           pluginOverrides.nvim-lightbulb = pkgs.vimPlugins.nvim-lightbulb;
           startPlugins = with pkgs.vimPlugins; [
@@ -132,16 +137,22 @@ in
             enable = true;
             setupOpts.defaults.layout_strategy = "flex";
           };
-          filetree.nvimTree = {
+          utility.snacks-nvim = {
             enable = true;
-            mappings.toggle = "tt";
-            openOnSetup = false;
             setupOpts = {
-              git.enable = true;
-              modified.enable = true;
-              renderer.highlight_git = true;
-              renderer.icons.show.git = true;
-              update_focused_file.enable = true;
+              explorer.enabled = true;
+              picker = {
+                enabled = true;
+                sources.explorer = {
+                  hidden = true;
+                  auto_close = true;
+                  layout = {
+                    preset = "sidebar";
+                    preview = "main";
+                  };
+                };
+              };
+              image.enabled = true;
             };
           };
           binds.whichKey.enable = true;
@@ -193,6 +204,11 @@ in
           luaConfigRC.buffercycle = /* lua */ ''
             vim.keymap.set("n", "<C-Tab>",   "<Cmd>BufferLineCycleNext<CR>", { desc = "Next buffer" })
             vim.keymap.set("n", "<C-S-Tab>", "<Cmd>BufferLineCyclePrev<CR>", { desc = "Prev buffer" })
+          '';
+          luaConfigRC.snacks-explorer-toggle = /* lua */ ''
+            vim.keymap.set("n", "<leader>tt", function()
+              require("snacks").explorer()
+            end, { desc = "Toggle snacks explorer" })
           '';
           visuals.indent-blankline.enable = true;
           visuals.nvim-scrollbar.enable = true;
