@@ -8,6 +8,7 @@
         onActivation = {
           autoUpdate = false;
           cleanup = "zap";
+          extraFlags = [ "--force-cleanup" ];
           upgrade = false;
         };
         taps = [ "mhaeuser/mhaeuser" ];
