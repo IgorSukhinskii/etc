@@ -4,6 +4,7 @@
     { config, ... }:
     {
       xdg.enable = true;
+      home.preferXdgDirectories = true;
 
       home.shell.enableZshIntegration = true;
 

@@ -5,6 +5,7 @@
       ./config.nix
       inputs.home-manager.darwinModules.home-manager
       {
+        home-manager.backupFileExtension = "hm-backup";
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
         home-manager.extraSpecialArgs = {

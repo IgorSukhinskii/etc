@@ -137,6 +137,7 @@
       terminalConfig = ''
         set -g renumber-windows on
         set -g extended-keys on
+        set -g extended-keys-format csi-u
         set -g focus-events on
 
         # True color + image passthrough (sixel/kitty for ghostty)
