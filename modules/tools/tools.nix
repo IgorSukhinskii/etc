@@ -110,6 +110,7 @@
         with pkgs;
         [ azure-cli ]
         ++ lib.optionals stdenv.isDarwin [
+          pngpaste
           qmk
           telegram-desktop
           brave
