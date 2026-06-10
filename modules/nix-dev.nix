@@ -160,6 +160,8 @@
         exec ssh -F "$HOME/.lima/private-vm/ssh.config" \
           -o User=${vmUser} \
           -o ControlPath="$HOME/.lima/private-vm/ssh-${vmUser}.sock" \
+          -o ControlMaster=auto \
+          -o ControlPersist=600 \
           lima-private-vm "$@"
       '';
 
@@ -274,6 +276,38 @@
         "$limactl" stop private-vm 2>&1 | tail -3
       '';
 
+      privateVmProjectNew = pkgs.writeShellScriptBin "private-vm-project-new" ''
+        # Create a new VM-backed project: host stub in ~/projects/<name> with a
+        # .private-vm marker, and matching ~/projects/<name> inside the VM.
+        set -euo pipefail
+
+        name="''${1:-}"
+        if [[ -z "$name" ]]; then
+          echo "usage: private-vm-project-new <name>" >&2
+          exit 1
+        fi
+
+        host_dir="$HOME/projects/$name"
+        vm_dir="~/projects/$name"
+        marker="$host_dir/.private-vm"
+
+        if [[ -e "$host_dir" ]]; then
+          echo "error: $host_dir already exists" >&2
+          exit 1
+        fi
+
+        "${privateVmStart}/bin/private-vm-start"
+
+        mkdir -p "$host_dir"
+        printf 'VM_DIR=%s\n' "$vm_dir" > "$marker"
+
+        "${privateVmSsh}/bin/private-vm-ssh" "mkdir -p $vm_dir"
+
+        echo "created: $host_dir (stub)" >&2
+        echo "created: $vm_dir (inside VM)" >&2
+        echo "switch with: sessionizer → $name" >&2
+      '';
+
       nixRebuild = pkgs.writeShellScriptBin "nix-rebuild" ''
         # Rebuild and switch to the nix-darwin config for this machine.
         # Uses short hostname as config attribute.
@@ -318,6 +352,7 @@
           privateVmSsh
           privateVmRdp
           privateVmStop
+          privateVmProjectNew
         ]
         ++ lib.optionals stdenv.isDarwin [
           nixDarwinModule

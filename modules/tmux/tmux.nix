@@ -52,7 +52,20 @@
           name=$(basename "$path" | tr . _)
         fi
 
-        tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
+        if [[ -f "$path/.private-vm" ]]; then
+          vm_dir=$(grep '^VM_DIR=' "$path/.private-vm" | cut -d= -f2-)
+          [[ -z "$vm_dir" ]] && vm_dir="~/projects/$name"
+
+          private-vm-start
+
+          tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
+          tmux set-option -t "$name" default-command \
+            "private-vm-ssh -t 'cd $vm_dir && exec \$SHELL'"
+          tmux set-environment -t "$name" PRIVATE_VM_SSH "private-vm-ssh"
+          tmux set-environment -t "$name" PRIVATE_VM_DIR "$vm_dir"
+        else
+          tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
+        fi
         tmux switch-client -t "$name"
       '';
       # builtins.fromJSON decodes \uXXXX at eval time, keeping source ASCII-safe

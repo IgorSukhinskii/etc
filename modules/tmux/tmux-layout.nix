@@ -35,12 +35,23 @@
         session_root=$(tmux display-message -p '#{session_path}')
         existing=$(tmux list-windows -F '#W' 2>/dev/null)
 
+        vm_ssh=$(tmux show-environment PRIVATE_VM_SSH 2>/dev/null | grep -v '^-' | sed 's/^PRIVATE_VM_SSH=//')
+        vm_dir=$(tmux show-environment PRIVATE_VM_DIR 2>/dev/null | grep -v '^-' | sed 's/^PRIVATE_VM_DIR=//')
+
         for name in ${windowOrder}; do
           echo "$existing" | grep -qx "$name" && continue
 
           cmd="''${WINS[$name]}"
-          tmux new-window -d -n "$name" -c "$session_root"
-          [ -n "$cmd" ] && tmux send-keys -t ":$name" "$cmd" Enter
+          if [[ -n "$vm_ssh" && -n "$cmd" ]]; then
+            # Run the command inside the VM; drop back to a VM shell on exit.
+            tmux new-window -d -n "$name" "$vm_ssh -t 'cd $vm_dir && $cmd; exec \$SHELL'"
+          elif [[ -n "$vm_ssh" ]]; then
+            # Shell window: default-command provides the VM shell.
+            tmux new-window -d -n "$name"
+          else
+            tmux new-window -d -n "$name" -c "$session_root"
+            [ -n "$cmd" ] && tmux send-keys -t ":$name" "$cmd" Enter
+          fi
           true
         done
       '';
