@@ -1,0 +1,35 @@
+vmType: vz
+arch: aarch64
+cpus: 4
+memory: "4GiB"
+disk: "20GiB"
+
+# Skip guest-agent install, cloud-init probes, fstab rewrites etc.
+# Our NixOS image is fully self-configured at build time.
+plain: true
+
+# Image path is rewritten by the launcher script to point at the
+# nixos-generators build output (result-image/nixos.qcow2).
+images:
+  - location: "PLACEHOLDER_IMAGE_PATH"
+    arch: aarch64
+
+# No host filesystem mounts — the whole point is isolation.
+mounts: []
+
+# Use the NixOS image's pre-baked user, not the host's macOS username.
+user:
+  name: "igor"
+  home: "/home/igor"
+  uid: 1000
+
+ssh:
+  loadDotSSHPubKeys: false
+  localPort: 60022
+
+# portForwards is ignored in plain mode; the launcher script
+# (private-vm-start) opens RDP forwarding via SSH separately.
+
+containerd:
+  system: false
+  user: false

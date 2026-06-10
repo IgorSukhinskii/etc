@@ -86,6 +86,75 @@
             done
       '';
 
+      privateVmBuild = pkgs.writeShellScriptBin "private-vm-build" ''
+        # Build the private-vm qcow image. --impure is required because the
+        # config reads ~/.ssh/id_ed25519.pub directly from the host (kept out
+        # of the repo). Extra args are forwarded to nix build.
+        set -euo pipefail
+        exec nix build --impure "${flakeDir}#private-vm-image" "$@"
+      '';
+
+      privateVmStart = pkgs.writeShellScriptBin "private-vm-start" ''
+        # Boot the private-vm Lima instance (plain mode) and open an SSH tunnel
+        # for RDP. Idempotent: safe to run repeatedly.
+        set -euo pipefail
+
+        flake_dir="${flakeDir}"
+        image="$flake_dir/result/nixos.qcow2"
+        template="$flake_dir/hosts/private-vm/lima.yaml"
+        rendered="$HOME/.lima/_private-vm-rendered.yaml"
+        limactl="${pkgs.lima}/bin/limactl"
+
+        if [[ ! -e "$image" ]]; then
+          echo "image missing — building..." >&2
+          "${privateVmBuild}/bin/private-vm-build" >&2
+        fi
+
+        mkdir -p "$(dirname "$rendered")"
+        sed "s|PLACEHOLDER_IMAGE_PATH|$image|" "$template" > "$rendered"
+
+        status=$("$limactl" list --format '{{.Status}}' private-vm 2>/dev/null || echo "Missing")
+        case "$status" in
+          Running) echo "VM already running" >&2 ;;
+          Stopped) "$limactl" start private-vm --tty=false >&2 || true ;;
+          *)       "$limactl" start --name=private-vm "$rendered" --tty=false >&2 || true ;;
+        esac
+
+        # Wait for SSH to actually answer (lima's "fatal" timeout doesn't mean dead).
+        for i in {1..60}; do
+          if ssh -F "$HOME/.lima/private-vm/ssh.config" -o BatchMode=yes \
+               -o ConnectTimeout=2 lima-private-vm true 2>/dev/null; then
+            break
+          fi
+          sleep 1
+        done
+
+        # Open RDP tunnel if not already up.
+        if ! ${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN >/dev/null 2>&1; then
+          ssh -F "$HOME/.lima/private-vm/ssh.config" \
+              -L 3389:127.0.0.1:3389 -N -f lima-private-vm
+          echo "RDP tunnel: 127.0.0.1:3389 -> private-vm:3389" >&2
+        else
+          echo "RDP tunnel already established" >&2
+        fi
+
+        echo "Ready. SSH: ssh -F ~/.lima/private-vm/ssh.config lima-private-vm" >&2
+      '';
+
+      privateVmStop = pkgs.writeShellScriptBin "private-vm-stop" ''
+        # Stop the private-vm Lima instance and tear down the RDP tunnel.
+        set -euo pipefail
+        limactl="${pkgs.lima}/bin/limactl"
+
+        # Kill any SSH tunnel forwarding 3389.
+        pids=$(${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN -t 2>/dev/null || true)
+        if [[ -n "$pids" ]]; then
+          kill $pids || true
+        fi
+
+        "$limactl" stop private-vm 2>&1 | tail -3
+      '';
+
       nixRebuild = pkgs.writeShellScriptBin "nix-rebuild" ''
         # Rebuild and switch to the nix-darwin config for this machine.
         # Uses short hostname as config attribute.
@@ -124,6 +193,9 @@
           nixHmModule
           nixSrcSearch
           nixRebuild
+          privateVmBuild
+          privateVmStart
+          privateVmStop
         ]
         ++ lib.optionals stdenv.isDarwin [ nixDarwinModule ];
 

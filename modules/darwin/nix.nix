@@ -30,6 +30,22 @@
         options = "--delete-older-than 30d";
       };
       nix.optimise.automatic = true;
+
+      nix.linux-builder = {
+        enable = true;
+        ephemeral = false;
+        maxJobs = 4;
+        config = {
+          virtualisation = {
+            darwin-builder = {
+              diskSize = 120 * 1024;
+              memorySize = 12 * 1024;
+            };
+            cores = 6;
+          };
+        };
+      };
+
       nixpkgs.hostPlatform = "aarch64-darwin";
       nixpkgs.config.allowUnfree = true;
       system.stateVersion = 6;
