@@ -187,6 +187,7 @@ in
               lsp.enable = true;
               treesitter.enable = true;
             };
+            typst = lang;
             rust = lang;
             wgsl = {
               enable = true;
