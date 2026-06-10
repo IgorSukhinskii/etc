@@ -9,6 +9,9 @@
     }:
     let
       flakeDir = "${config.home.homeDirectory}/etc";
+      # User-facing username inside the VM (RDP login, owns home data).
+      # Bootstrap/ops user is hardcoded "nixos" — see hosts/private-vm/bootstrap.nix.
+      vmUser = inputs.self.privateVm.username;
 
       nixHmModule = pkgs.writeShellScriptBin "nix-hm-module" ''
         # Print the home-manager programs/<name>.nix module for the HM version
@@ -87,66 +90,182 @@
       '';
 
       privateVmBuild = pkgs.writeShellScriptBin "private-vm-build" ''
-        # Build the private-vm qcow image. --impure is required because the
-        # config reads ~/.ssh/id_ed25519.pub directly from the host (kept out
-        # of the repo). Extra args are forwarded to nix build.
+        # Build the bootstrap qcow. --impure is required because the image
+        # bakes in Lima's per-host agent pubkey (~/.lima/_config/user.pub) as
+        # the trust anchor for first SSH. That's the only host-specific read;
+        # everything else (real pubkey, password hash) is pushed at runtime.
         set -euo pipefail
         exec nix build --impure "${flakeDir}#private-vm-image" "$@"
       '';
 
       privateVmStart = pkgs.writeShellScriptBin "private-vm-start" ''
-        # Boot the private-vm Lima instance (plain mode) and open an SSH tunnel
-        # for RDP. Idempotent: safe to run repeatedly.
+        # Boot the Lima VM and wait for SSH. No RDP tunnel here — that's
+        # private-vm-rdp's job. Idempotent.
         set -euo pipefail
 
         flake_dir="${flakeDir}"
-        image="$flake_dir/result/nixos.qcow2"
         template="$flake_dir/hosts/private-vm/lima.yaml"
         rendered="$HOME/.lima/_private-vm-rendered.yaml"
         limactl="${pkgs.lima}/bin/limactl"
 
-        if [[ ! -e "$image" ]]; then
+        # Upstream system.build.images names the qcow after system.nixos.label,
+        # not "nixos.qcow2" — glob for it.
+        if ! image=$(ls "$flake_dir"/result/*.qcow2 2>/dev/null | head -1) || [[ -z "$image" ]]; then
           echo "image missing — building..." >&2
           "${privateVmBuild}/bin/private-vm-build" >&2
+          image=$(ls "$flake_dir"/result/*.qcow2 | head -1)
         fi
 
         mkdir -p "$(dirname "$rendered")"
         sed "s|PLACEHOLDER_IMAGE_PATH|$image|" "$template" > "$rendered"
 
         status=$("$limactl" list --format '{{.Status}}' private-vm 2>/dev/null || echo "Missing")
+        # --timeout=20s: in plain mode Lima's SSH-readiness check tries to
+        # exec a script that reads from /mnt/lima-cidata/param.env, which
+        # plain mode never mounts. The check then hangs until the default
+        # 10-minute timeout. Cut that short — our own wait loop below
+        # verifies SSH is actually reachable.
         case "$status" in
           Running) echo "VM already running" >&2 ;;
-          Stopped) "$limactl" start private-vm --tty=false >&2 || true ;;
-          *)       "$limactl" start --name=private-vm "$rendered" --tty=false >&2 || true ;;
+          Stopped) "$limactl" start --timeout=20s private-vm --tty=false >&2 || true ;;
+          *)       "$limactl" start --timeout=20s --name=private-vm "$rendered" --tty=false >&2 || true ;;
         esac
 
-        # Wait for SSH to actually answer (lima's "fatal" timeout doesn't mean dead).
-        for i in {1..60}; do
+        # Wait for SSH. cloud-init runs at first boot so this can take longer
+        # on a fresh VM (image cold-start + cloud-init + sshd).
+        for i in {1..90}; do
           if ssh -F "$HOME/.lima/private-vm/ssh.config" -o BatchMode=yes \
                -o ConnectTimeout=2 lima-private-vm true 2>/dev/null; then
-            break
+            echo "VM ready" >&2
+            exit 0
           fi
           sleep 1
         done
+        echo "VM did not become SSH-reachable in 90s" >&2
+        exit 1
+      '';
 
-        # Open RDP tunnel if not already up.
+      privateVmSsh = pkgs.writeShellScriptBin "private-vm-ssh" ''
+        # SSH as the user-facing user (set in hosts/private-vm/vars.nix) — the
+        # account you'd want for terminal/tmux work. The `nixos` bootstrap user
+        # is reserved for private-vm-rebuild and not surfaced here.
+        #
+        # ControlPath override: SSH multiplexes by (host, port) using the
+        # ControlPath from ssh.config. private-vm-rebuild opens that master as
+        # nixos, so a default `-o User=${vmUser}` would silently reuse the
+        # nixos channel. Per-user socket = independent multiplexing.
+        #
+        # Note: this only works after the first successful private-vm-rebuild,
+        # since that's what creates the user + installs their pubkey.
+        exec ssh -F "$HOME/.lima/private-vm/ssh.config" \
+          -o User=${vmUser} \
+          -o ControlPath="$HOME/.lima/private-vm/ssh-${vmUser}.sock" \
+          lima-private-vm "$@"
+      '';
+
+      privateVmRebuild = pkgs.writeShellScriptBin "private-vm-rebuild" ''
+        # Idempotent provision + rebuild. Always SSHes as `nixos` (the
+        # bootstrap user — Lima's ssh.config bakes that in at first start).
+        # Pushes:
+        #   - passwd.hash (xrdp PAM)
+        #   - ${vmUser}.pub (real user's SSH key, for private-vm-ssh)
+        # both into /var/lib/private-vm/. Rotation = re-run this with new
+        # source files. Then rsyncs etc/ → /home/nixos/etc and runs
+        # nixos-rebuild switch inside the VM (uses the VM's own builder —
+        # no host linux-builder involvement after the initial image).
+        set -euo pipefail
+
+        "${privateVmStart}/bin/private-vm-start"
+
+        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+        flake_dir="${flakeDir}"
+        passwd_hash="''${XDG_CONFIG_HOME:-$HOME/.config}/private-vm/passwd.hash"
+        pubkey="$HOME/.ssh/id_ed25519.pub"
+        lima_pubkey="$HOME/.lima/_config/user.pub"
+
+        for f in "$passwd_hash" "$pubkey" "$lima_pubkey"; do
+          if [[ ! -f "$f" ]]; then
+            echo "missing required file: $f" >&2
+            exit 1
+          fi
+        done
+
+        ssh -F "$ssh_cfg" lima-private-vm 'sudo mkdir -p /var/lib/private-vm'
+        scp -F "$ssh_cfg" "$passwd_hash"  lima-private-vm:/tmp/passwd.hash
+        scp -F "$ssh_cfg" "$pubkey"       lima-private-vm:/tmp/${vmUser}.pub
+        scp -F "$ssh_cfg" "$lima_pubkey"  lima-private-vm:/tmp/lima.pub
+        ssh -F "$ssh_cfg" lima-private-vm '
+          sudo install -m0600 /tmp/passwd.hash    /var/lib/private-vm/passwd.hash &&
+          sudo install -m0644 /tmp/${vmUser}.pub  /var/lib/private-vm/${vmUser}.pub &&
+          sudo install -m0644 /tmp/lima.pub       /var/lib/private-vm/lima.pub &&
+          rm -f /tmp/passwd.hash /tmp/${vmUser}.pub /tmp/lima.pub
+        '
+
+        ${pkgs.rsync}/bin/rsync -az --delete \
+          --exclude='.git' \
+          --exclude='.direnv' \
+          --exclude='result' \
+          --exclude='result-*' \
+          -e "ssh -F $ssh_cfg" \
+          "$flake_dir/" lima-private-vm:etc/
+
+        ssh -F "$ssh_cfg" lima-private-vm \
+          'sudo nixos-rebuild switch --flake "$HOME/etc#private-vm"'
+      '';
+
+      privateVmRdp = pkgs.writeShellScriptBin "private-vm-rdp" ''
+        # Ensure VM up + RDP tunnel up + password from Keychain → launch FreeRDP.
+        # First-time setup:
+        #   security add-generic-password -a igor -s private-vm-rdp -w
+        # The xrdp session starts whatever openbox autostarts (Firefox by
+        # default in full.nix).
+        set -euo pipefail
+
+        "${privateVmStart}/bin/private-vm-start"
+
+        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
         if ! ${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN >/dev/null 2>&1; then
-          ssh -F "$HOME/.lima/private-vm/ssh.config" \
-              -L 3389:127.0.0.1:3389 -N -f lima-private-vm
+          ssh -F "$ssh_cfg" -L 3389:127.0.0.1:3389 -N -f lima-private-vm
           echo "RDP tunnel: 127.0.0.1:3389 -> private-vm:3389" >&2
-        else
-          echo "RDP tunnel already established" >&2
         fi
 
-        echo "Ready. SSH: ssh -F ~/.lima/private-vm/ssh.config lima-private-vm" >&2
+        if ! pw=$(security find-generic-password -a ${vmUser} -s private-vm-rdp -w 2>/dev/null); then
+          echo "No keychain entry. Create one with:" >&2
+          echo "  security add-generic-password -a ${vmUser} -s private-vm-rdp -w" >&2
+          exit 1
+        fi
+
+        # Prefer sdl-freerdp (SDL backend, native macOS) over xfreerdp (X11,
+        # needs XQuartz). nixpkgs' freerdp 3.x ships both.
+        if command -v sdl-freerdp >/dev/null 2>&1; then
+          rdp=sdl-freerdp
+        elif command -v xfreerdp >/dev/null 2>&1; then
+          rdp=xfreerdp
+        else
+          rdp=""
+        fi
+
+        if [[ -n "$rdp" ]]; then
+          # Note: /p: places the password in argv (visible in `ps`). Fine on a
+          # single-user laptop; harden via askpass if that ever changes.
+          # /sound:sys:mac — CoreAudio backend; /sound:sys:pulse crashes on
+          # macOS because PulseAudio doesn't exist and the disconnect handler
+          # assert-fails when the channel can't initialise.
+          exec "$rdp" /v:127.0.0.1:3389 /u:${vmUser} "/p:$pw" \
+            /dynamic-resolution /size:1600x1000 /scale:140 \
+            /sound:sys:mac +clipboard /cert:ignore
+        else
+          printf '%s' "$pw" | pbcopy
+          echo "No FreeRDP found. Password copied to clipboard." >&2
+          echo "Connect with Windows App to 127.0.0.1:3389 as ${vmUser}." >&2
+        fi
       '';
 
       privateVmStop = pkgs.writeShellScriptBin "private-vm-stop" ''
-        # Stop the private-vm Lima instance and tear down the RDP tunnel.
+        # Stop the VM and tear down any RDP tunnel.
         set -euo pipefail
         limactl="${pkgs.lima}/bin/limactl"
 
-        # Kill any SSH tunnel forwarding 3389.
         pids=$(${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN -t 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
           kill $pids || true
@@ -195,9 +314,16 @@
           nixRebuild
           privateVmBuild
           privateVmStart
+          privateVmRebuild
+          privateVmSsh
+          privateVmRdp
           privateVmStop
         ]
-        ++ lib.optionals stdenv.isDarwin [ nixDarwinModule ];
+        ++ lib.optionals stdenv.isDarwin [
+          nixDarwinModule
+          lima
+          freerdp
+        ];
 
       # Neovim nix language support — colocated here so formatter stays in sync
       # with the pre-commit hook below. Both use nixfmt (RFC 166 style).

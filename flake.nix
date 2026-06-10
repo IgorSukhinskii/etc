@@ -36,10 +36,6 @@
       url = "github:nix-community/NixOS-WSL";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixos-generators = {
-      url = "github:nix-community/nixos-generators";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -54,6 +50,7 @@
         (inputs.import-tree ./modules)
         ./hosts/mac/flake-module.nix
         ./hosts/wsl/flake-module.nix
+        ./hosts/private-vm/vars.nix
         ./hosts/private-vm/flake-module.nix
       ];
     };

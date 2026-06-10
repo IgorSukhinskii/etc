@@ -1,59 +1,25 @@
-let
-  username = "igor";
-  homeDirectory = /home/igor;
-  stateVersion = "25.05";
-in
-{ lib, pkgs, ... }:
+{ lib, inputs, ... }:
 {
+  # Truly-shared base for both the bootstrap image and the full in-VM config.
+  # The user-facing username comes from flake.privateVm.username (vars.nix),
+  # so the codebase has one source of truth and forks just change vars.nix.
   options.host = {
-    username = lib.mkOption { type = lib.types.str; };
-    homeDirectory = lib.mkOption { type = lib.types.path; };
-    stateVersion = lib.mkOption { type = lib.types.str; };
+    username = lib.mkOption {
+      type = lib.types.str;
+      default = inputs.self.privateVm.username;
+    };
+    stateVersion = lib.mkOption {
+      type = lib.types.str;
+      default = "25.05";
+    };
   };
 
   config = {
-    host = { inherit username homeDirectory stateVersion; };
-
-    networking.hostName = "private-vm";
-
     services.openssh = {
       enable = true;
       settings.PasswordAuthentication = false;
     };
-
-    programs.zsh.enable = true;
-    programs.nix-ld.enable = true;
-
-    users.users.${username} = {
-      extraGroups = [
-        "wheel"
-        "audio"
-        "video"
-      ];
-      shell = pkgs.zsh;
-      # Read pubkeys directly from host $HOME; requires --impure build.
-      # The wrapper in modules/nix-dev.nix (private-vm-build) passes --impure.
-      # - Host pubkey: lets the user SSH in interactively.
-      # - Lima pubkey: lets Lima's host agent authenticate post-boot health checks.
-      openssh.authorizedKeys.keys =
-        let
-          readKey =
-            p:
-            lib.optionals (builtins.pathExists p) [
-              (lib.removeSuffix "\n" (builtins.readFile p))
-            ];
-        in
-        readKey "/Users/igor.sukhinskii/.ssh/id_ed25519.pub"
-        ++ readKey "/Users/igor.sukhinskii/.lima/_config/user.pub";
-    };
-
     security.sudo.wheelNeedsPassword = false;
-
-    system.stateVersion = stateVersion;
-
-    home-manager.users.${username} = {
-      home.stateVersion = stateVersion;
-      programs.home-manager.enable = true;
-    };
+    system.stateVersion = "25.05";
   };
 }

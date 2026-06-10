@@ -2,33 +2,38 @@ vmType: vz
 arch: aarch64
 cpus: 4
 memory: "4GiB"
-disk: "20GiB"
+# Disk hosts the nix store across rebuilds (full GUI closure) + user data.
+# Separate encrypted home volume comes later (PLAN.md roadmap).
+disk: "40GiB"
 
-# Skip guest-agent install, cloud-init probes, fstab rewrites etc.
-# Our NixOS image is fully self-configured at build time.
+# Skip Lima's guestagent + lima-specific cidata bootstrap. The image already
+# has igor's account with Lima's agent pubkey authorised (baked at build time),
+# so we don't need Lima's runtime user-injection step. plain:true also skips
+# the cosmetic "fatal: did not receive a 'running' status" log.
 plain: true
 
-# Image path is rewritten by the launcher script to point at the
-# nixos-generators build output (result-image/nixos.qcow2).
+# Image path is rewritten by the launcher to point at the qcow built from
+# nixosConfigurations.private-vm-bootstrap (upstream system.build.images.qemu-efi).
 images:
   - location: "PLACEHOLDER_IMAGE_PATH"
     arch: aarch64
 
-# No host filesystem mounts — the whole point is isolation.
+# No host filesystem mounts — host code reaches the VM via rsync-over-SSH in
+# private-vm-rebuild, never via shared mounts. Keeps the isolation boundary
+# explicit and the workflow hypervisor-agnostic.
 mounts: []
 
-# Use the NixOS image's pre-baked user, not the host's macOS username.
+# Matches the bootstrap user baked into the image (bootstrap.nix). The real
+# user (from flake.privateVm.username) is a separate account created by the
+# in-VM rebuild, only used for RDP sessions.
 user:
-  name: "igor"
-  home: "/home/igor"
+  name: "nixos"
+  home: "/home/nixos"
   uid: 1000
 
 ssh:
   loadDotSSHPubKeys: false
   localPort: 60022
-
-# portForwards is ignored in plain mode; the launcher script
-# (private-vm-start) opens RDP forwarding via SSH separately.
 
 containerd:
   system: false
