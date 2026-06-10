@@ -69,6 +69,21 @@ in
     home.stateVersion = config.host.stateVersion;
     programs.home-manager.enable = true;
 
+    programs.zsh.initContent = ''
+      _cursor_shape() {
+        case ''${KEYMAP-} in
+          vicmd|visual) print -n '\e[1 q' ;;
+          *) print -n '\e[5 q' ;;
+        esac
+      }
+      zle-keymap-select() { _cursor_shape; }
+      zle-line-init() { _cursor_shape; }
+      zle -N zle-keymap-select
+      zle -N zle-line-init
+      _cursor_reset() { print -n '\e[0 q'; }
+      preexec_functions+=(_cursor_reset)
+    '';
+
     xdg.configFile."openbox/autostart".text = ''
       firefox &
     '';
