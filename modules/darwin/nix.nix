@@ -10,7 +10,7 @@
       # nixpkgs-unstable, then remove this overlay + the nixpkgs-stable input.
       nixpkgs.overlays = [
         (final: prev: {
-          qemu = inputs.nixpkgs-stable.legacyPackages.${prev.system}.qemu;
+          qemu = inputs.nixpkgs-stable.legacyPackages.${prev.stdenv.hostPlatform.system}.qemu;
         })
       ];
 
