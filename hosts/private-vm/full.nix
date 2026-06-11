@@ -17,8 +17,14 @@ in
   # nixos is still the host→VM bootstrap account used by private-vm-rebuild
   # (Lima's ssh.config bakes User=nixos at first start), but everyday work
   # — `private-vm-ssh`, in-VM tmux, etc. — happens as this user.
+  # uid pinned so the encrypted /home volume (which carries file ownership in
+  # its ext4 inode table) stays consistent across system-disk wipes. Without
+  # this, NixOS allocates dynamically via /var/lib/nixos/uid-map — state that
+  # lives on the root fs and gets wiped, risking a uid drift that would
+  # orphan every file on the LUKS volume.
   users.users.${user} = {
     isNormalUser = true;
+    uid = 1000;
     home = "/home/${user}";
     extraGroups = [
       "wheel"
@@ -99,6 +105,21 @@ in
         </applications>
       </openbox_config>
     '';
+  };
+
+  # Encrypted home volume. Mounted manually via private-vm-unlock (host script)
+  # after Touch ID + cryptsetup luksOpen. noauto: systemd does not attempt to
+  # mount at boot (the LUKS container is closed until explicitly unlocked).
+  # nofail: belt-and-suspenders so any stray dependency doesn't block boot.
+  # The dm-crypt device /dev/mapper/private-home is created by luksOpen with
+  # that fixed name; the mapping name is the stable identifier we use here.
+  fileSystems."/home/${user}" = {
+    device = "/dev/mapper/private-home";
+    fsType = "ext4";
+    options = [
+      "nofail"
+      "noauto"
+    ];
   };
 
   networking.firewall.allowedTCPPorts = [ 3389 ];

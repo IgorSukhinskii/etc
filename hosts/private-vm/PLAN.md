@@ -4,7 +4,7 @@ A Lima-managed NixOS VM on the work Mac that isolates personal data + private
 browsing from InTune/Defender surveillance. This doc exists so future sessions
 can pick up the work without re-deriving the design from scratch.
 
-## Status (2026-06-10)
+## Status (2026-06-11)
 
 Operational end-to-end on the smoke-test path:
 - ✅ Image build (~2.6 GB)
@@ -150,7 +150,9 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 - **`.git/objects` permission errors after `nix-rebuild`** — `sudo darwin-rebuild` occasionally creates a git object as root in `.git/objects/<hash>/`. Fix: `sudo chown -R $(whoami):staff .git/objects/`.
 - **`nix build` ignores untracked files** — when you add a new file (e.g. `vars.nix`), `nix build` of a dirty git tree won't see it until you `git add` it. Won't fail loudly — files just go missing in the build.
 - **First `private-vm-rebuild` activation is slow** — dbus-broker reload + restart of every unit cascades for several minutes the first time. Subsequent rebuilds (when most of the closure is already there) take seconds.
+- **`switch-to-configuration-ng` 0.1.0 wedges on first activation** — Rust rewrite enters a userspace tight loop (no syscalls, ~100% CPU, single thread, tiny RSS) after restarting the user dbus-broker. Worked around in `bootstrap.nix` with `system.switch.enableNg = false` + `enable = true`, reverting to the Perl switch. Re-enable once `switch-to-configuration-ng > 0.1.x` and the bug is fixed upstream. If you ever hit the wedge again with ng on: `sudo systemctl kill -s KILL nixos-rebuild-switch-to-configuration.service` + `reset-failed`, then disable ng before retrying.
 - **Killed `private-vm-rebuild` leaves a stale systemd unit** — `nixos-rebuild-switch-to-configuration.service` lingers as "already loaded or has a fragment file". Fix: `private-vm-ssh sudo systemctl reset-failed nixos-rebuild-switch-to-configuration.service` and `... stop ...`, then retry.
+- **Pre-uid-pin home volumes need a one-time chown** — `full.nix` pins `users.users.${user}.uid = 1000` so the LUKS home volume's ownership survives system-disk wipes. Volumes formatted before this pin landed have files owned by whatever uid the dynamic allocator picked (typically 1001 if anything else got 1000 first). Symptom: `home-manager-igor.service` fails fast (~40 ms, exit 1) on first activation after a reset because HM can't write into `~/.config/`. Fix once: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo chown -R 1000:100 /home/${user}'`, then `sudo systemctl restart home-manager-${user}.service`. From the pin onward this won't drift again.
 - **TOFU on first SSH** — first connection adds the VM host key to known_hosts. Acceptable.
 - **Lima's "fatal" exit code in plain mode** — Lima's SSH-readiness check expects a cidata file plain mode never mounts, so the foreground wait would hit a 10-min timeout. We set `--timeout=20s` to cut that short; our own SSH check verifies for real.
 
@@ -172,9 +174,30 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 
 ### Persistence & encryption
 
-- [ ] **Separate `/home` volume** — Lima `additionalDisks` raw volume mounted at `/home/${user}`. Survives `limactl delete + private-vm-start`. Pre-requisite for the LUKS work below.
-- [ ] **LUKS-encrypted `/home`** — manual unlock service (not initrd) so the VM can boot without secrets being accessible. `nofail` mount.
-- [ ] **Touch ID unlock for LUKS** — host daemon listening on vsock, calls Keychain (biometric prompt), returns passphrase to a VM-side `unlock`/`lock` pair. Always keep an offline passphrase backup (password manager).
+- [x] **Separate `/home` volume + LUKS encryption + Touch ID unlock** — Lima named disk (`limactl disk create private-home --size 40GiB`, survives `limactl delete`). `/dev/vdb` formatted as LUKS + ext4 via `private-vm-init-home` (one-time, before first `private-vm-rebuild`). NixOS mounts it at `/home/${user}` with `nofail noauto`; boot proceeds with volume locked. `private-vm-unlock` (host script): Touch ID via `/usr/bin/swift hosts/private-vm/keychain-helper.swift` → passphrase from macOS Keychain → SSH `cryptsetup luksOpen` + `mount`. `private-vm-lock`: reverse. `private-vm-rebuild` + `private-vm-rdp` + sessionizer all call `private-vm-unlock` automatically (idempotent). `private-vm-keychain-set`: one-time passphrase setup; always keep an offline backup in your password manager.
+
+  One-time setup sequence:
+  ```
+  limactl disk create private-home --size 40GiB
+  private-vm-build && private-vm-start
+  private-vm-keychain-set
+  private-vm-init-home
+  private-vm-rebuild
+  ```
+
+- [ ] **Split `/nix` onto its own Lima named disk** — natural next step toward
+  impermanence. `/nix` (store + db + profiles + gcroots, the whole tree) on a
+  separate persistent volume means a `limactl delete + build + start` cycle
+  doesn't re-download the closure — first rebuild after wipe is just system
+  activation + `/boot` repopulation, seconds instead of minutes. Content-
+  addressable store paths make the split safe; the `/nix/var/nix/db` SQLite
+  must stay with the store (split them and `nix-store --verify` lies). One-
+  time format dance like `private-vm-init-home` but no LUKS (nothing secret
+  in `/nix`). Bootstrap config needs a `fileSystems."/nix"` entry and first-
+  boot handling for an unformatted `/dev/vdc`. Standalone change; do after the
+  current unlock fix is in. Full erase-your-darlings (tmpfs `/` + bind-mounts
+  for `/var/lib/nixos`, `/etc/machine-id`, ssh host keys) is the natural step
+  *after* that, but much more invasive and not required for the speed win.
 
 ### Network
 

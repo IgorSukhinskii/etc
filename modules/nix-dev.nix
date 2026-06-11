@@ -13,6 +13,13 @@
       # Bootstrap/ops user is hardcoded "nixos" — see hosts/private-vm/bootstrap.nix.
       vmUser = inputs.self.privateVm.username;
 
+      # Touch ID + Keychain helpers for encrypted home volume.
+      # touchIdPrompt: store path to the Swift script; call as /usr/bin/swift ${touchIdPrompt} "<reason>".
+      # privateVmKeychainSet: one-time setup that stores the LUKS passphrase.
+      keychainHelper = import ../hosts/private-vm/keychain-helper.nix { inherit pkgs vmUser; };
+      touchIdPrompt = keychainHelper.touchIdPrompt;
+      privateVmKeychainSet = keychainHelper.privateVmKeychainSet;
+
       nixHmModule = pkgs.writeShellScriptBin "nix-hm-module" ''
         # Print the home-manager programs/<name>.nix module for the HM version
         # pinned in flake.lock. Always reflects the pinned version.
@@ -181,6 +188,17 @@
 
         ssh_cfg="$HOME/.lima/private-vm/ssh.config"
         flake_dir="${flakeDir}"
+
+        # If the home disk is LUKS-initialized but not yet mounted, unlock
+        # before running nixos-rebuild. home-manager activation writes dotfiles
+        # to /home/${vmUser}; without the encrypted volume mounted those writes
+        # land on the root disk and get shadowed on first unlock.
+        if ssh -F "$ssh_cfg" lima-private-vm "sudo cryptsetup isLuks /dev/vdb" 2>/dev/null; then
+          if ! ssh -F "$ssh_cfg" lima-private-vm "mountpoint -q /home/${vmUser}" 2>/dev/null; then
+            echo "home volume not mounted — unlocking..." >&2
+            "${privateVmUnlock}/bin/private-vm-unlock"
+          fi
+        fi
         passwd_hash="''${XDG_CONFIG_HOME:-$HOME/.config}/private-vm/passwd.hash"
         pubkey="$HOME/.ssh/id_ed25519.pub"
         lima_pubkey="$HOME/.lima/_config/user.pub"
@@ -224,6 +242,7 @@
         set -euo pipefail
 
         "${privateVmStart}/bin/private-vm-start"
+        "${privateVmUnlock}/bin/private-vm-unlock"
 
         ssh_cfg="$HOME/.lima/private-vm/ssh.config"
         if ! ${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN >/dev/null 2>&1; then
@@ -297,6 +316,7 @@
         fi
 
         "${privateVmStart}/bin/private-vm-start"
+        "${privateVmUnlock}/bin/private-vm-unlock"
 
         mkdir -p "$host_dir"
         printf 'VM_DIR=%s\n' "$vm_dir" > "$marker"
@@ -306,6 +326,104 @@
         echo "created: $host_dir (stub)" >&2
         echo "created: $vm_dir (inside VM)" >&2
         echo "switch with: sessionizer → $name" >&2
+      '';
+
+      privateVmInitHome = pkgs.writeShellScriptBin "private-vm-init-home" ''
+        # One-time: format /dev/vdb as LUKS + ext4, mount at /home/${vmUser}.
+        # Run AFTER private-vm-keychain-set and BEFORE the first private-vm-rebuild.
+        # SSH uses the nixos bootstrap account — igor doesn't exist yet at this stage.
+        # Pre-requisite: limactl disk create private-home --size 40GiB
+        set -euo pipefail
+
+        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+        vm_nixos() { ssh -F "$ssh_cfg" lima-private-vm "$@"; }
+
+        "${privateVmStart}/bin/private-vm-start"
+
+        # Verify the additional disk is attached
+        if ! vm_nixos "test -b /dev/vdb" 2>/dev/null; then
+          echo "error: /dev/vdb not found." >&2
+          echo "Create the Lima disk first: limactl disk create private-home --size 40GiB" >&2
+          exit 1
+        fi
+
+        # Guard: refuse to re-format an already-initialized LUKS volume
+        if vm_nixos "sudo cryptsetup isLuks /dev/vdb" 2>/dev/null; then
+          echo "error: /dev/vdb is already a LUKS volume — home already initialized." >&2
+          echo "Use private-vm-unlock to open it." >&2
+          echo "To start over: limactl disk delete private-home && limactl disk create private-home --size 40GiB" >&2
+          exit 1
+        fi
+
+        echo "This will format /dev/vdb as a LUKS-encrypted ext4 home volume." >&2
+        echo "ALL DATA on it will be destroyed. Type 'yes' to continue:" >&2
+        read -r confirm
+        [[ "$confirm" == "yes" ]] || { echo "Aborted." >&2; exit 1; }
+
+        # Touch ID + passphrase from Keychain
+        /usr/bin/swift "${touchIdPrompt}" "Initialize private-vm home volume"
+        pw=$(security find-generic-password -a "${vmUser}" -s private-vm-luks -w)
+
+        echo "Formatting LUKS container..." >&2
+        printf '%s' "$pw" | vm_nixos \
+          "sudo cryptsetup luksFormat --batch-mode --key-file=- /dev/vdb"
+
+        echo "Opening LUKS container..." >&2
+        printf '%s' "$pw" | vm_nixos \
+          "sudo cryptsetup luksOpen --key-file=- /dev/vdb private-home"
+
+        echo "Creating ext4 filesystem..." >&2
+        vm_nixos "sudo mkfs.ext4 -L private-home /dev/mapper/private-home"
+
+        echo "Mounting..." >&2
+        vm_nixos "sudo mkdir -p /home/${vmUser} && sudo mount /dev/mapper/private-home /home/${vmUser}"
+
+        echo "" >&2
+        echo "Home volume initialized and mounted at /home/${vmUser}." >&2
+        echo "Next: run private-vm-rebuild to provision the full config." >&2
+      '';
+
+      privateVmUnlock = pkgs.writeShellScriptBin "private-vm-unlock" ''
+        # Open the LUKS home volume and mount it. Idempotent: no-op if already
+        # mounted. Runs entirely over the `nixos` SSH channel so it works on a
+        # virgin VM where the real user (${vmUser}) does not exist yet — this
+        # is the path private-vm-rebuild takes on first provisioning.
+        set -euo pipefail
+
+        "${privateVmStart}/bin/private-vm-start"
+
+        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+
+        # Idempotent: skip Touch ID if already mounted
+        if ssh -F "$ssh_cfg" lima-private-vm "mountpoint -q /home/${vmUser}" 2>/dev/null; then
+          exit 0
+        fi
+
+        # Touch ID + passphrase from Keychain
+        /usr/bin/swift "${touchIdPrompt}" "Unlock private-vm home volume"
+        pw=$(security find-generic-password -a "${vmUser}" -s private-vm-luks -w)
+
+        # Open LUKS container (passphrase via stdin). Guard for idempotency:
+        # if /dev/mapper/private-home already exists, luksOpen would error.
+        if ! ssh -F "$ssh_cfg" lima-private-vm "[ -e /dev/mapper/private-home ]" 2>/dev/null; then
+          printf '%s' "$pw" | ssh -F "$ssh_cfg" lima-private-vm \
+            "sudo cryptsetup luksOpen --key-file=- /dev/vdb private-home"
+        fi
+
+        # Explicit mount (not fstab-based): fstab entry comes from full.nix,
+        # which has not yet been applied on a virgin VM. /home/${vmUser} also
+        # may not exist yet — create it as the mountpoint.
+        ssh -F "$ssh_cfg" lima-private-vm \
+          "sudo mkdir -p /home/${vmUser} && sudo mount /dev/mapper/private-home /home/${vmUser}"
+        echo "home volume unlocked and mounted" >&2
+      '';
+
+      privateVmLock = pkgs.writeShellScriptBin "private-vm-lock" ''
+        # Unmount the home volume and close the LUKS container.
+        set -euo pipefail
+        "${privateVmSsh}/bin/private-vm-ssh" \
+          "sudo umount /home/${vmUser} && sudo cryptsetup luksClose private-home"
+        echo "home volume locked" >&2
       '';
 
       nixRebuild = pkgs.writeShellScriptBin "nix-rebuild" ''
@@ -353,6 +471,10 @@
           privateVmRdp
           privateVmStop
           privateVmProjectNew
+          privateVmKeychainSet
+          privateVmInitHome
+          privateVmUnlock
+          privateVmLock
         ]
         ++ lib.optionals stdenv.isDarwin [
           nixDarwinModule

@@ -1,4 +1,9 @@
-{ lib, inputs, ... }:
+{
+  lib,
+  pkgs,
+  inputs,
+  ...
+}:
 {
   # Truly-shared base for both the bootstrap image and the full in-VM config.
   # The user-facing username comes from flake.privateVm.username (vars.nix),
@@ -21,5 +26,14 @@
     };
     security.sudo.wheelNeedsPassword = false;
     system.stateVersion = "25.05";
+
+    # Required in both the bootstrap image (for private-vm-init-home which
+    # formats and opens the LUKS volume before the first full rebuild) and in
+    # the full runtime config (for private-vm-unlock / private-vm-lock).
+    boot.kernelModules = [ "dm-crypt" ];
+    environment.systemPackages = with pkgs; [
+      cryptsetup
+      e2fsprogs
+    ];
   };
 }

@@ -2,9 +2,18 @@ vmType: vz
 arch: aarch64
 cpus: 4
 memory: "4GiB"
-# Disk hosts the nix store across rebuilds (full GUI closure) + user data.
-# Separate encrypted home volume comes later (PLAN.md roadmap).
+# Root disk: nix store + system state. Home data lives on the separate
+# encrypted volume below (additionalDisks), not here.
 disk: "40GiB"
+
+# Encrypted home volume. Create once with:
+#   limactl disk create private-home --size 40GiB
+# Lima stores it in ~/.lima/_disks/private-home/ and does NOT delete it on
+# `limactl delete` — only `limactl disk delete private-home` removes it.
+# format:false because we manage LUKS formatting ourselves via private-vm-init-home.
+additionalDisks:
+  - name: "private-home"
+    format: false
 
 # Skip Lima's guestagent + lima-specific cidata bootstrap. The image already
 # has igor's account with Lima's agent pubkey authorised (baked at build time),

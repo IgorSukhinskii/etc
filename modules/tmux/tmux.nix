@@ -57,6 +57,7 @@
           [[ -z "$vm_dir" ]] && vm_dir="~/projects/$name"
 
           private-vm-start
+          private-vm-unlock
 
           tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
           tmux set-option -t "$name" default-command \
