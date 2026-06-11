@@ -16,6 +16,7 @@ Operational end-to-end, including reset / re-provisioning paths:
 - ✅ LUKS-encrypted `/home/${user}` on separate Lima named disk, Touch ID + Keychain unlock, idempotent
 - ✅ Virgin-VM provisioning works without chicken-and-egg: `private-vm-unlock` runs entirely over the `nixos` SSH channel and explicit-mounts the LUKS volume, so the first rebuild can establish the real user against an already-mounted home
 - ✅ uid pins (`nixos=1000`, `igor=1001`) — encrypted-home ownership survives system-disk wipes; the two users no longer collide on uid 1000
+- ✅ Host-side `pkgs.qemu` overlay-pinned to `nixos-26.05` (qemu 10.2.2) so the linux-builder VM doesn't hit the macOS-26 HVF assertion in qemu 11.0.0
 
 ## Threat model
 
@@ -111,10 +112,11 @@ Two distinct users:
 | `/sound:sys:mac` (not pulse) | `pulse` is PulseAudio which isn't on macOS; pulse init fails and the disconnect handler null-derefs, crashing the client. CoreAudio backend is `mac`. |
 | FreeRDP from nixpkgs (not Homebrew) | Already in nixpkgs binary cache for aarch64-darwin; matches the rest of the Nix-managed toolchain |
 | `users.users.nixos.uid = 1000` + `users.users.${user}.uid = 1001` (both explicit) | Default-aligned (NixOS would have given `nixos` 1000 dynamically as the first normal user). Pinning means encrypted-home ownership stays stable across system-disk wipes, and the two users can never silently collide on the same uid (NixOS user-activation does not reject collisions — it writes both into /etc/passwd). |
+| Host `pkgs.qemu` overlay-pinned to `inputs.nixpkgs-stable.legacyPackages.${system}.qemu` | qemu 11.0.0 in nixpkgs-unstable hits an HVF `SMCR_EL1` assertion on macOS 26, crashing the linux-builder VM at boot (nixpkgs #528299, qemu-project/qemu#3533). Overriding only `pkgs.qemu` is the smallest possible workaround — every other package follows unstable. Remove the overlay + the `nixpkgs-stable` input once the upstream qemu fix lands. |
 
 ## Files
 
-- `flake.nix` — flake inputs
+- `flake.nix` — flake inputs (incl. `nixpkgs-stable` for the qemu pin — see decisions table)
 - `hosts/private-vm/vars.nix` — `flake.privateVm.username` (single source of truth)
 - `hosts/private-vm/flake-module.nix` — `nixosConfigurations.{private-vm,private-vm-bootstrap}` + `packages.private-vm-image`
 - `hosts/private-vm/bootstrap.nix` — image-only config: sshd, `nixos` user with Lima's pubkey + `uid=1000`, nix flakes, git, rsync, `services.openssh.authorizedKeysFiles` runtime paths, filesystem + bootloader settings (mkDefault, image profile overrides during disk-image build)
@@ -122,7 +124,7 @@ Two distinct users:
 - `hosts/private-vm/full.nix` — real user with `uid=1001` + `hashedPasswordFile`, Xorg+openbox+xrdp+pipewire+Firefox, home-manager wiring, LUKS-home `fileSystems` entry
 - `hosts/private-vm/lima.yaml` — VM resources (40 GiB), `plain: true`, user.name=nixos, `private-home` additional disk
 - `modules/nix-dev.nix` — `private-vm-{build,start,rebuild,ssh,rdp,stop,unlock,lock,init-home,keychain-set,project-new}` wrappers; adds `lima` + `freerdp` to PATH on darwin
-- `modules/darwin/nix.nix` — linux-builder config (used by `private-vm-build` only)
+- `modules/darwin/nix.nix` — linux-builder config (used by `private-vm-build` only) + `pkgs.qemu` overlay pin
 
 ## Workflow
 
@@ -156,6 +158,7 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 - **Killed `private-vm-rebuild` leaves a stale systemd unit** — `nixos-rebuild-switch-to-configuration.service` lingers as "already loaded or has a fragment file". Fix: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo systemctl reset-failed nixos-rebuild-switch-to-configuration.service'`, then retry. (Use the `nixos` channel, not `private-vm-ssh` — the real user may not exist yet on a fresh VM.)
 - **Changing a user's uid in NixOS requires manual eviction** — NixOS's `update-users-groups.pl` deliberately preserves an existing user's uid even when the config asks for a different one, to avoid orphaning files. Symptom: you set `uid = 1001` in config, rebuild, and `/etc/passwd` still shows the old uid. Fix once: `sudo sed -i '/^USER:/d' /etc/passwd /etc/shadow /etc/group` (replace `USER:`), then re-run `private-vm-rebuild`. The activation creates the user fresh at the configured uid. Then `chown -R NEWUID:NEWGID /home/USER` to relabel any persistent home volume. CAVEAT: `/var/lib/nixos/uid-map` is the canonical state; do NOT pipe it through a missing tool with `sudo tee` (a failed pipe upstream wipes the file via the still-successful `tee`, and the next activation will crash with "malformed JSON" — recover by writing `{}` into both `uid-map` and `gid-map`).
 - **Pre-uid-pin home volumes need a one-time chown** — Volumes provisioned before the explicit `uid = 1001` pin landed in `full.nix` have files owned by whatever uid the allocator picked then. Symptom: `home-manager-${user}.service` fails fast (~40 ms, exit 1) on first activation after a system-disk wipe because HM can't write into `~/.config/`. Fix: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo chown -R 1001:100 /home/${user}'`, then `sudo systemctl restart home-manager-${user}.service`. From the pin onward this won't drift again.
+- **Do not run `linux-builder-start` manually while launchd has it active** — The script sets `trap "rm -rf $TMPDIR" EXIT` against `/run/org.nixos.linux-builder`, which is also the live launchd instance's TMPDIR. Killing your manual copy fires the trap and deletes the launchd instance's cert / 9p-mount source dir out from under it. The VM then runs without `/etc/ssl/certs`, every `curl https://cache.nixos.org/...` fails with code 60/77, and builds break in confusing ways. Recovery: `sudo launchctl kickstart -k system/org.nixos.linux-builder`. For diagnostic poking, only use `sudo launchctl kickstart -k` to restart.
 - **TOFU on first SSH** — first connection adds the VM host key to known_hosts. Acceptable.
 - **Lima's "fatal" exit code in plain mode** — Lima's SSH-readiness check expects a cidata file plain mode never mounts, so the foreground wait would hit a 10-min timeout. We set `--timeout=20s` to cut that short; our own SSH check verifies for real. (Cosmetic — see roadmap item to suppress.)
 
@@ -172,6 +175,7 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 ### Host-side cleanup
 
 - [ ] **Shrink the linux-builder qcow (115 GB on disk)** — only used for image rebuilds now. Drop to ~40 GB in `modules/darwin/nix.nix` and recreate, OR run `fstrim -av` inside the builder + `qemu-img convert -O qcow2 -c` on host. Biggest single reclaim available.
+- [ ] **Remove the `pkgs.qemu` overlay pin once upstream lands the HVF fix** — Tracking: [nixpkgs #528299](https://github.com/NixOS/nixpkgs/issues/528299), [qemu-project/qemu#3533](https://gitlab.com/qemu-project/qemu/-/work_items/3533). To remove: delete the `nixpkgs-stable` input from `flake.nix`, delete the `nixpkgs.overlays` block from `modules/darwin/nix.nix`, `nix flake update nixpkgs`, `nix-rebuild`, `sudo launchctl kickstart -k system/org.nixos.linux-builder`, verify qemu boots: `sudo ssh -i /etc/nix/builder_ed25519 -p 31022 builder@127.0.0.1 'curl -sS -o /dev/null -w %{http_code} https://cache.nixos.org/'` should print `200`.
 - [ ] **`/nix/store` GC** — `nix-collect-garbage -d` on user + sudo; precede with `find ~/projects ~/code -maxdepth 3 -name "result" -type l` to clean up stale GC roots. Follow with `nix store optimise`.
 - [ ] **Backup story** — none yet. Especially relevant once we have an encrypted /home volume (below) — the raw volume file is what you'd back up.
 

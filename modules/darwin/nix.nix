@@ -1,8 +1,19 @@
-{ ... }:
+{ inputs, ... }:
 {
   flake.darwinModules.nix =
-    { config, ... }:
+    { config, pkgs, ... }:
     {
+      # qemu 11.0.0 on nixpkgs-unstable aborts on macOS 26 with an HVF
+      # SMCR_EL1 assertion (nixpkgs #528299, qemu-project/qemu#3533), which
+      # crashes the linux-builder VM at boot. Pin qemu to the nixos-26.05
+      # stable channel (qemu 10.2.2) until the upstream fix lands on
+      # nixpkgs-unstable, then remove this overlay + the nixpkgs-stable input.
+      nixpkgs.overlays = [
+        (final: prev: {
+          qemu = inputs.nixpkgs-stable.legacyPackages.${prev.system}.qemu;
+        })
+      ];
+
       nix.settings.allow-import-from-derivation = true;
       nix.settings.experimental-features = [
         "nix-command"

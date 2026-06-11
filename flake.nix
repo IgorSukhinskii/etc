@@ -3,6 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Stable channel kept solely to source a working `qemu` for the darwin
+    # linux-builder. qemu 11.0.0 in nixpkgs-unstable aborts on macOS 26 with
+    # an HVF SMCR_EL1 assertion (nixpkgs #528299, qemu-project/qemu#3533).
+    # Remove this input + the overlay in modules/darwin/nix.nix once the
+    # upstream qemu fix lands on unstable.
+    nixpkgs-stable.url = "github:NixOS/nixpkgs/nixos-26.05";
     nix-darwin = {
       url = "github:nix-darwin/nix-darwin/master";
       inputs.nixpkgs.follows = "nixpkgs";
