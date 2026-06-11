@@ -2,7 +2,9 @@
 let
   # Lima's per-host agent pubkey — the one impure read. Lima generates this on
   # first `limactl` use; it's the hypervisor's bootstrap identity, not personal.
-  limaPubkey = builtins.getEnv "HOME" + "/.lima/_config/user.pub";
+  limaHomeEnv = builtins.getEnv "LIMA_HOME";
+  limaHome = if limaHomeEnv != "" then limaHomeEnv else builtins.getEnv "HOME" + "/.lima";
+  limaPubkey = limaHome + "/_config/user.pub";
 in
 {
   # Image-only profile. Boots, accepts SSH from Lima, runs nixos-rebuild

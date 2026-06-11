@@ -8,8 +8,9 @@ disk: "40GiB"
 
 # Encrypted home volume. Create once with:
 #   limactl disk create private-home --size 40GiB
-# Lima stores it in ~/.lima/_disks/private-home/ and does NOT delete it on
-# `limactl delete` — only `limactl disk delete private-home` removes it.
+# Lima stores it in $LIMA_HOME/_disks/private-home/ and does NOT delete it on
+# `limactl delete` — only `limactl disk delete private-home` removes it. The
+# private-vm wrappers set LIMA_HOME to an isolated XDG state path.
 # format:false because we manage LUKS formatting ourselves via private-vm-init-home.
 additionalDisks:
   - name: "private-home"

@@ -17,6 +17,7 @@ Operational end-to-end, including reset / re-provisioning paths:
 - ✅ Virgin-VM provisioning works without chicken-and-egg: `private-vm-unlock` runs entirely over the `nixos` SSH channel and explicit-mounts the LUKS volume, so the first rebuild can establish the real user against an already-mounted home
 - ✅ uid pins (`nixos=1000`, `igor=1001`) — encrypted-home ownership survives system-disk wipes; the two users no longer collide on uid 1000
 - ✅ Host-side `pkgs.qemu` overlay-pinned to `nixos-26.05` (qemu 10.2.2) so the linux-builder VM doesn't hit the macOS-26 HVF assertion in qemu 11.0.0
+- ✅ private-vm wrappers use an isolated Lima home: `${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima`
 
 ## Threat model
 
@@ -103,6 +104,7 @@ Two distinct users:
 | `services.openssh.authorizedKeysFiles` instead of `users.users.<u>.openssh.authorizedKeys.keyFiles` | keyFiles inlines content into the closure at eval time — forbidden in pure mode and would require image rebuild on every key rotation. authorizedKeysFiles is read by sshd at connection time. |
 | `initialPassword = "bootstrap"` for the nixos user | NixOS leaves accounts with no password as `!`-locked, and sshd's PAM `account` check rejects locked accounts even on pubkey auth. The password value is never used — `PasswordAuthentication=false` blocks SSH password login. |
 | `plain: true` + `--timeout=20s` on limactl start | Plain mode skips Lima's cidata mount and guestagent. The default 10-min SSH readiness check would hang because Lima's probe expects a file plain mode never mounts. |
+| Isolated `LIMA_HOME` for private-vm | Lima does not split config/data/state via XDG, but it does honor `LIMA_HOME`. The wrappers set it to `${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima`, keeping private-vm instance state, named disks, SSH config, and Lima's agent key out of global `~/.lima` / Colima state. |
 | Per-user ControlPath in `private-vm-ssh` | SSH multiplexes by (host, port) and pins the master to whichever user opened it first. private-vm-rebuild opens the shared master as nixos; without a per-user socket, private-vm-ssh would silently land in the nixos channel. |
 | In-VM `nixos-rebuild` (not host-cross-built) | Incremental, preserves runtime state, doesn't need linux-builder after image build |
 | rsync over SSH (vs Lima `mounts:`) | Explicit; works under any hypervisor |
@@ -126,6 +128,59 @@ Two distinct users:
 - `modules/nix-dev.nix` — `private-vm-{build,start,rebuild,ssh,rdp,stop,unlock,lock,init-home,keychain-set,project-new}` wrappers; adds `lima` + `freerdp` to PATH on darwin
 - `modules/darwin/nix.nix` — linux-builder config (used by `private-vm-build` only) + `pkgs.qemu` overlay pin
 
+## Disk / state model
+
+The target mental model is not "mutable VM as source of truth"; it is
+"disposable instance disk + explicit durable volumes".
+
+Current mechanics:
+
+- `private-vm-build` creates a read-only Nix build artifact under `result/`
+  (a symlink into the Nix store) containing a bootable qcow2.
+- `private-vm-start` gives that qcow2 to Lima.
+- Lima creates a mutable instance root disk at
+  `${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima/private-vm/disk`.
+  This disk is runtime scratch: boot mutates it, `nixos-rebuild` mutates it,
+  logs mutate it, and it should become safe to delete/recreate.
+- Lima named disks live under
+  `${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima/_disks/` unless we
+  later move the encrypted home volume to a user-owned explicit image path.
+
+Desired lifecycle split:
+
+- **Build artifacts** — reproducible and replaceable. The bootstrap qcow should
+  eventually be copied or linked to a stable artifact path such as
+  `${XDG_DATA_HOME:-$HOME/.local/share}/private-vm/images/bootstrap.qcow2`
+  instead of relying on the accidental `~/etc/result` symlink.
+- **Disposable instance state** — Lima's `private-vm/disk`, logs, sockets, and
+  generated SSH config. Safe to recreate from the bootstrap artifact.
+- **Persistent `/nix` cache** — future Lima named disk (`private-nix`) mounted
+  as the whole `/nix` tree. Large, automatically managed by Nix and GC, useful
+  for fast rebuilds, but recoverable if lost.
+- **Persistent `/persistence` system state** — future small disk for identity
+  and low-churn state such as `/etc/machine-id`, SSH host keys,
+  `/var/lib/private-vm`, and `/var/lib/nixos`. Useful to avoid churn, but not
+  precious user data.
+- **Persistent `/home/${user}` user data** — encrypted data volume. This is
+  the one durable thing that should be treated as user-owned, backed up, and
+  migrated intentionally. It necessarily contains a mix of real data,
+  materialized home-manager files, app configs, caches, downloads, browser
+  state, and project trees; splitting that cleanly can be optimized later.
+
+North-star workflow:
+
+```
+delete the Lima instance directory
+private-vm-start   # recreates disposable root from known artifact
+private-vm-unlock  # mounts encrypted user data
+private-vm-rebuild # converges full NixOS/HM state
+private-vm-rdp     # use it
+```
+
+Longer term, add a higher-level `private-vm-up` wrapper that means "ensure the
+instance exists, attach/init durable disks, unlock home, rebuild if needed, and
+return when the VM is usable".
+
 ## Workflow
 
 ```bash
@@ -146,7 +201,8 @@ private-vm-rebuild          # fast incremental rebuild inside the VM (seconds-mi
 
 # Diagnostic
 private-vm-ssh              # shell as ${user}
-ssh -F ~/.lima/private-vm/ssh.config lima-private-vm   # shell as nixos (ops)
+lima_home="${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima"
+ssh -F "$lima_home/private-vm/ssh.config" lima-private-vm   # shell as nixos (ops)
 lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 ```
 
@@ -155,9 +211,9 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 - **`.git/objects` permission errors after `nix-rebuild`** — `sudo darwin-rebuild` occasionally creates a git object as root in `.git/objects/<hash>/`. Fix: `sudo chown -R $(whoami):staff .git/objects/`.
 - **`nix build` ignores untracked files** — when you add a new file (e.g. `vars.nix`), `nix build` of a dirty git tree won't see it until you `git add` it. Won't fail loudly — files just go missing in the build.
 - **`switch-to-configuration-ng` wedge on first activation — fixed by flake currency** — Earlier nixpkgs-unstable revs (before 2026-05-23) shipped a stc-ng with a tight-loop bug: after restarting the user dbus-broker, the Rust binary would spin at 100% CPU forever (no syscalls, ~4.7 MB RSS, kernel stack empty). Root cause was `nixos-activation.service` being `Type=oneshot` *without* `RemainAfterExit=yes`, so `default.target`'s `Wants=` re-triggered it while stc-ng was also explicitly restarting it — the script kept getting SIGTERMed and respawned. Fixed by nixpkgs commit `663a59e0` (`nixos/activation: run user nixos-activation.service exactly once per switch`). No config workaround needed today; just stay on an unstable rev that includes that commit (anything ≥ 2026-05-23). If you ever see the wedge again: capture `systemctl status nixos-rebuild-switch-to-configuration.service` + `cat /proc/$PID/wchan` + `strace -c` (zero syscalls + empty kstack = userspace spin = this bug class).
-- **Killed `private-vm-rebuild` leaves a stale systemd unit** — `nixos-rebuild-switch-to-configuration.service` lingers as "already loaded or has a fragment file". Fix: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo systemctl reset-failed nixos-rebuild-switch-to-configuration.service'`, then retry. (Use the `nixos` channel, not `private-vm-ssh` — the real user may not exist yet on a fresh VM.)
+- **Killed `private-vm-rebuild` leaves a stale systemd unit** — `nixos-rebuild-switch-to-configuration.service` lingers as "already loaded or has a fragment file". Fix via the `nixos` SSH channel: `lima_home="${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima"; ssh -F "$lima_home/private-vm/ssh.config" lima-private-vm 'sudo systemctl reset-failed nixos-rebuild-switch-to-configuration.service'`, then retry. (Use the `nixos` channel, not `private-vm-ssh` — the real user may not exist yet on a fresh VM.)
 - **Changing a user's uid in NixOS requires manual eviction** — NixOS's `update-users-groups.pl` deliberately preserves an existing user's uid even when the config asks for a different one, to avoid orphaning files. Symptom: you set `uid = 1001` in config, rebuild, and `/etc/passwd` still shows the old uid. Fix once: `sudo sed -i '/^USER:/d' /etc/passwd /etc/shadow /etc/group` (replace `USER:`), then re-run `private-vm-rebuild`. The activation creates the user fresh at the configured uid. Then `chown -R NEWUID:NEWGID /home/USER` to relabel any persistent home volume. CAVEAT: `/var/lib/nixos/uid-map` is the canonical state; do NOT pipe it through a missing tool with `sudo tee` (a failed pipe upstream wipes the file via the still-successful `tee`, and the next activation will crash with "malformed JSON" — recover by writing `{}` into both `uid-map` and `gid-map`).
-- **Pre-uid-pin home volumes need a one-time chown** — Volumes provisioned before the explicit `uid = 1001` pin landed in `full.nix` have files owned by whatever uid the allocator picked then. Symptom: `home-manager-${user}.service` fails fast (~40 ms, exit 1) on first activation after a system-disk wipe because HM can't write into `~/.config/`. Fix: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo chown -R 1001:100 /home/${user}'`, then `sudo systemctl restart home-manager-${user}.service`. From the pin onward this won't drift again.
+- **Pre-uid-pin home volumes need a one-time chown** — Volumes provisioned before the explicit `uid = 1001` pin landed in `full.nix` have files owned by whatever uid the allocator picked then. Symptom: `home-manager-${user}.service` fails fast (~40 ms, exit 1) on first activation after a system-disk wipe because HM can't write into `~/.config/`. Fix via the `nixos` SSH channel: `sudo chown -R 1001:100 /home/${user}`, then `sudo systemctl restart home-manager-${user}.service`. From the pin onward this won't drift again.
 - **Do not run `linux-builder-start` manually while launchd has it active** — The script sets `trap "rm -rf $TMPDIR" EXIT` against `/run/org.nixos.linux-builder`, which is also the live launchd instance's TMPDIR. Killing your manual copy fires the trap and deletes the launchd instance's cert / 9p-mount source dir out from under it. The VM then runs without `/etc/ssl/certs`, every `curl https://cache.nixos.org/...` fails with code 60/77, and builds break in confusing ways. Recovery: `sudo launchctl kickstart -k system/org.nixos.linux-builder`. For diagnostic poking, only use `sudo launchctl kickstart -k` to restart.
 - **TOFU on first SSH** — first connection adds the VM host key to known_hosts. Acceptable.
 - **Lima's "fatal" exit code in plain mode** — Lima's SSH-readiness check expects a cidata file plain mode never mounts, so the foreground wait would hit a 10-min timeout. We set `--timeout=20s` to cut that short; our own SSH check verifies for real. (Cosmetic — see roadmap item to suppress.)
@@ -181,11 +237,24 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 
 ### Persistence & encryption
 
+- [x] **Move private-vm Lima state under XDG state** — wrappers export
+  `LIMA_HOME=${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima` before
+  `limactl`, SSH config lookup, and the impure image build. This intentionally
+  creates a fresh Lima universe for private-vm: instance root disk,
+  `_disks/`, `_config/user.pub`, logs, sockets, rendered yaml, and ssh.config
+  all live there. `private-vm-build` creates the `_config/user{,.pub}` ed25519
+  identity if absent before baking the public key into the bootstrap image;
+  `private-vm-start` forces a rebuild when the isolated identity is missing so
+  it does not boot an old image baked for global `~/.lima`. Existing
+  `~/.lima/private-vm` state is not migrated; recreate from scratch while the
+  VM still has no important data.
+
 - [x] **Separate `/home` volume + LUKS encryption + Touch ID unlock** — Lima named disk (`limactl disk create private-home --size 40GiB`, survives `limactl delete`). `/dev/vdb` formatted as LUKS + ext4 via `private-vm-init-home` (one-time, before first `private-vm-rebuild`). NixOS mounts it at `/home/${user}` with `nofail noauto`; boot proceeds with volume locked. `private-vm-unlock` (host script): Touch ID via `/usr/bin/swift hosts/private-vm/keychain-helper.swift` → passphrase from macOS Keychain → SSH `cryptsetup luksOpen` + `mount`. `private-vm-lock`: reverse. `private-vm-rebuild` + `private-vm-rdp` + sessionizer all call `private-vm-unlock` automatically (idempotent). `private-vm-keychain-set`: one-time passphrase setup; always keep an offline backup in your password manager.
 
   One-time setup sequence:
   ```
-  limactl disk create private-home --size 40GiB
+  LIMA_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima" \
+    limactl disk create private-home --size 40GiB
   private-vm-build && private-vm-start
   private-vm-keychain-set
   private-vm-init-home
@@ -219,6 +288,20 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
   `/etc/machine-id`, ssh host keys) is the natural step *after* this, but much
   more invasive and not required for the speed win.
 
+- [ ] **Add `/persistence` system-state disk** — small future disk for
+  non-user-data state that should survive disposable-root recreation:
+  `/etc/machine-id`, SSH host keys, `/var/lib/private-vm`, and
+  `/var/lib/nixos` first. Treat it as convenience/identity state rather than
+  precious data; losing it should cause churn and perhaps a rebuild, not data
+  loss.
+
+- [ ] **Move encrypted home to an explicitly user-owned location** — Lima named
+  disks are convenient, but semantically `/home/${user}` is private user data,
+  not Lima cache. Investigate first-class Lima support for attaching a disk by
+  explicit path. Desired lifecycle: a stable encrypted image somewhere like
+  `~/Private/private-vm/home.img`, created/deleted/backed up only by explicit
+  user action. Avoid symlink hacks unless Lima has no better option.
+
 ### Network
 
 - [ ] **VPN inside the VM** — Mullvad (anonymous payment, established) or self-hosted WireGuard on a VPS. Hides DNS, SNI, destination IPs from Defender's network extension. Adds another layer below the VM-isolation boundary.
@@ -234,7 +317,7 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 
 - [ ] **In-VM editing workflow for `etc/`** — canonical source after rebuild lives at `/home/nixos/etc`, owned by nixos. If you want to iterate on config from inside the VM as `igor` (e.g. via tmux SSH session), you'd need either to add `igor` to the group that owns `/home/nixos/etc`, or to canonicalise the flake source to a shared path like `/var/lib/private-vm-etc`. Today the assumption is "edit on host, push via private-vm-rebuild". Worth deciding before this becomes a pain point.
 - [ ] **Host pubkey rotation** — if your `~/.ssh/id_ed25519.pub` ever changes (new key, new laptop), `private-vm-rebuild` pushes the new pubkey to `/var/lib/private-vm/${user}.pub`; sshd picks it up at the next connection. No image rebuild needed. Worth knowing; document the gotcha that the rebuild SSH itself goes via Lima's key so pubkey rotation can't lock out the rebuild path.
-- [ ] **Lima agent key rotation** — if `~/.lima/_config/user.pub` changes (Lima reinstall, manual delete), the image baked with the old key won't accept SSH from the new key. Need a `private-vm-build` + `limactl delete + start` cycle. `private-vm-rebuild` would then also push the new `lima.pub` so subsequent rebuilds use it.
+- [ ] **Lima agent key rotation** — if `$LIMA_HOME/_config/user.pub` changes (Lima home recreation, manual delete), the image baked with the old key won't accept SSH from the new key. Need a `private-vm-build` + `limactl delete + start` cycle. `private-vm-rebuild` would then also push the new `lima.pub` so subsequent rebuilds use it.
 
 ### In-VM housekeeping
 

@@ -9,6 +9,7 @@
     }:
     let
       flakeDir = "${config.home.homeDirectory}/etc";
+      limaHome = "\${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima";
       # User-facing username inside the VM (RDP login, owns home data).
       # Bootstrap/ops user is hardcoded "nixos" — see hosts/private-vm/bootstrap.nix.
       vmUser = inputs.self.privateVm.username;
@@ -98,10 +99,22 @@
 
       privateVmBuild = pkgs.writeShellScriptBin "private-vm-build" ''
         # Build the bootstrap qcow. --impure is required because the image
-        # bakes in Lima's per-host agent pubkey (~/.lima/_config/user.pub) as
-        # the trust anchor for first SSH. That's the only host-specific read;
-        # everything else (real pubkey, password hash) is pushed at runtime.
+        # bakes in Lima's per-host agent pubkey ($LIMA_HOME/_config/user.pub)
+        # as the trust anchor for first SSH. That's the only host-specific
+        # read; everything else (real pubkey, password hash) is pushed at
+        # runtime.
         set -euo pipefail
+
+        export LIMA_HOME="${limaHome}"
+        mkdir -p "$LIMA_HOME/_config"
+
+        # Ensure Lima's bootstrap identity exists before the impure Nix build
+        # reads it from hosts/private-vm/bootstrap.nix. `limactl info` reports
+        # the path but does not create the key on its own.
+        if [[ ! -f "$LIMA_HOME/_config/user" || ! -f "$LIMA_HOME/_config/user.pub" ]]; then
+          ssh-keygen -q -t ed25519 -N "" -C lima -f "$LIMA_HOME/_config/user"
+        fi
+
         exec nix build --impure "${flakeDir}#private-vm-image" "$@"
       '';
 
@@ -112,8 +125,14 @@
 
         flake_dir="${flakeDir}"
         template="$flake_dir/hosts/private-vm/lima.yaml"
-        rendered="$HOME/.lima/_private-vm-rendered.yaml"
+        export LIMA_HOME="${limaHome}"
+        rendered="$LIMA_HOME/_private-vm-rendered.yaml"
         limactl="${pkgs.lima}/bin/limactl"
+
+        if [[ ! -f "$LIMA_HOME/_config/user.pub" ]]; then
+          echo "Lima identity missing — rebuilding image for new LIMA_HOME..." >&2
+          "${privateVmBuild}/bin/private-vm-build" >&2
+        fi
 
         # Upstream system.build.images names the qcow after system.nixos.label,
         # not "nixos.qcow2" — glob for it.
@@ -141,7 +160,7 @@
         # Wait for SSH. cloud-init runs at first boot so this can take longer
         # on a fresh VM (image cold-start + cloud-init + sshd).
         for i in {1..90}; do
-          if ssh -F "$HOME/.lima/private-vm/ssh.config" -o BatchMode=yes \
+          if ssh -F "$LIMA_HOME/private-vm/ssh.config" -o BatchMode=yes \
                -o ConnectTimeout=2 lima-private-vm true 2>/dev/null; then
             echo "VM ready" >&2
             exit 0
@@ -164,9 +183,10 @@
         #
         # Note: this only works after the first successful private-vm-rebuild,
         # since that's what creates the user + installs their pubkey.
-        exec ssh -F "$HOME/.lima/private-vm/ssh.config" \
+        export LIMA_HOME="${limaHome}"
+        exec ssh -F "$LIMA_HOME/private-vm/ssh.config" \
           -o User=${vmUser} \
-          -o ControlPath="$HOME/.lima/private-vm/ssh-${vmUser}.sock" \
+          -o ControlPath="$LIMA_HOME/private-vm/ssh-${vmUser}.sock" \
           -o ControlMaster=auto \
           -o ControlPersist=600 \
           lima-private-vm "$@"
@@ -186,7 +206,8 @@
 
         "${privateVmStart}/bin/private-vm-start"
 
-        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
         flake_dir="${flakeDir}"
 
         # If the home disk is LUKS-initialized but not yet mounted, unlock
@@ -201,7 +222,7 @@
         fi
         passwd_hash="''${XDG_CONFIG_HOME:-$HOME/.config}/private-vm/passwd.hash"
         pubkey="$HOME/.ssh/id_ed25519.pub"
-        lima_pubkey="$HOME/.lima/_config/user.pub"
+        lima_pubkey="$LIMA_HOME/_config/user.pub"
 
         for f in "$passwd_hash" "$pubkey" "$lima_pubkey"; do
           if [[ ! -f "$f" ]]; then
@@ -244,7 +265,8 @@
         "${privateVmStart}/bin/private-vm-start"
         "${privateVmUnlock}/bin/private-vm-unlock"
 
-        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
         if ! ${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN >/dev/null 2>&1; then
           ssh -F "$ssh_cfg" -L 3389:127.0.0.1:3389 -N -f lima-private-vm
           echo "RDP tunnel: 127.0.0.1:3389 -> private-vm:3389" >&2
@@ -285,6 +307,7 @@
       privateVmStop = pkgs.writeShellScriptBin "private-vm-stop" ''
         # Stop the VM and tear down any RDP tunnel.
         set -euo pipefail
+        export LIMA_HOME="${limaHome}"
         limactl="${pkgs.lima}/bin/limactl"
 
         pids=$(${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN -t 2>/dev/null || true)
@@ -332,10 +355,12 @@
         # One-time: format /dev/vdb as LUKS + ext4, mount at /home/${vmUser}.
         # Run AFTER private-vm-keychain-set and BEFORE the first private-vm-rebuild.
         # SSH uses the nixos bootstrap account — igor doesn't exist yet at this stage.
-        # Pre-requisite: limactl disk create private-home --size 40GiB
+        # Pre-requisite:
+        #   LIMA_HOME=${limaHome} limactl disk create private-home --size 40GiB
         set -euo pipefail
 
-        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
         vm_nixos() { ssh -F "$ssh_cfg" lima-private-vm "$@"; }
 
         "${privateVmStart}/bin/private-vm-start"
@@ -343,7 +368,8 @@
         # Verify the additional disk is attached
         if ! vm_nixos "test -b /dev/vdb" 2>/dev/null; then
           echo "error: /dev/vdb not found." >&2
-          echo "Create the Lima disk first: limactl disk create private-home --size 40GiB" >&2
+          echo "Create the Lima disk first:" >&2
+          echo "  LIMA_HOME=$LIMA_HOME ${pkgs.lima}/bin/limactl disk create private-home --size 40GiB" >&2
           exit 1
         fi
 
@@ -392,7 +418,8 @@
 
         "${privateVmStart}/bin/private-vm-start"
 
-        ssh_cfg="$HOME/.lima/private-vm/ssh.config"
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
 
         # Idempotent: skip Touch ID if already mounted
         if ssh -F "$ssh_cfg" lima-private-vm "mountpoint -q /home/${vmUser}" 2>/dev/null; then
