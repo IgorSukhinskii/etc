@@ -13,8 +13,13 @@ in
   # hypervisor's ops account: SSH-only, used by private-vm-rebuild. The
   # user-facing user (host.username from vars.nix) is created by full.nix
   # and only exists for RDP/desktop sessions. Both coexist after the rebuild.
+  # uid pinned at 1000 to match what NixOS's dynamic allocator would have
+  # given it anyway (first normal user). Pinning makes the layout explicit so
+  # the real user (see full.nix) can pin its own uid right after without
+  # colliding with whichever order the allocator happens to walk in.
   users.users.nixos = {
     isNormalUser = true;
+    uid = 1000;
     home = "/home/nixos";
     extraGroups = [ "wheel" ];
     shell = pkgs.bash;

@@ -6,14 +6,16 @@ can pick up the work without re-deriving the design from scratch.
 
 ## Status (2026-06-11)
 
-Operational end-to-end on the smoke-test path:
-- ✅ Image build (~2.6 GB)
-- ✅ VM boots, SSH-as-`nixos` works via Lima's pubkey
-- ✅ `private-vm-rebuild` pushes credentials + rsyncs `etc/` + runs in-VM `nixos-rebuild switch`
-- ✅ SSH-as-`igor` works for terminal/tmux (via per-user ControlPath)
-- ✅ `private-vm-rdp` launches `sdl-freerdp` (CoreAudio backend) and reaches xrdp
+Operational end-to-end, including reset / re-provisioning paths:
 
-Rough but functional. Several real polish items below.
+- ✅ Image build (~2.6 GB) via host linux-builder
+- ✅ VM boots in plain mode, SSH-as-`nixos` works via Lima's pubkey
+- ✅ `private-vm-rebuild` pushes credentials + rsyncs `etc/` + runs in-VM `nixos-rebuild switch`
+- ✅ SSH-as-`igor` works for terminal/tmux (per-user ControlPath, with `ControlMaster=auto`)
+- ✅ `private-vm-rdp` launches `sdl-freerdp` (CoreAudio backend) and reaches xrdp
+- ✅ LUKS-encrypted `/home/${user}` on separate Lima named disk, Touch ID + Keychain unlock, idempotent
+- ✅ Virgin-VM provisioning works without chicken-and-egg: `private-vm-unlock` runs entirely over the `nixos` SSH channel and explicit-mounts the LUKS volume, so the first rebuild can establish the real user against an already-mounted home
+- ✅ uid pins (`nixos=1000`, `igor=1001`) — encrypted-home ownership survives system-disk wipes; the two users no longer collide on uid 1000
 
 ## Threat model
 
@@ -108,17 +110,18 @@ Two distinct users:
 | `sdl-freerdp` (not `xfreerdp`) on macOS | nixpkgs ships both; xfreerdp needs an X server (XQuartz) and fails with "failed to open display" on plain macOS. sdl-freerdp uses Metal/SDL natively. |
 | `/sound:sys:mac` (not pulse) | `pulse` is PulseAudio which isn't on macOS; pulse init fails and the disconnect handler null-derefs, crashing the client. CoreAudio backend is `mac`. |
 | FreeRDP from nixpkgs (not Homebrew) | Already in nixpkgs binary cache for aarch64-darwin; matches the rest of the Nix-managed toolchain |
+| `users.users.nixos.uid = 1000` + `users.users.${user}.uid = 1001` (both explicit) | Default-aligned (NixOS would have given `nixos` 1000 dynamically as the first normal user). Pinning means encrypted-home ownership stays stable across system-disk wipes, and the two users can never silently collide on the same uid (NixOS user-activation does not reject collisions — it writes both into /etc/passwd). |
 
 ## Files
 
 - `flake.nix` — flake inputs
 - `hosts/private-vm/vars.nix` — `flake.privateVm.username` (single source of truth)
 - `hosts/private-vm/flake-module.nix` — `nixosConfigurations.{private-vm,private-vm-bootstrap}` + `packages.private-vm-image`
-- `hosts/private-vm/bootstrap.nix` — image-only config: sshd, `nixos` user with Lima's pubkey, nix flakes, git, rsync, `services.openssh.authorizedKeysFiles` runtime paths, filesystem + bootloader settings (mkDefault, image profile overrides during disk-image build)
+- `hosts/private-vm/bootstrap.nix` — image-only config: sshd, `nixos` user with Lima's pubkey + `uid=1000`, nix flakes, git, rsync, `services.openssh.authorizedKeysFiles` runtime paths, filesystem + bootloader settings (mkDefault, image profile overrides during disk-image build)
 - `hosts/private-vm/config.nix` — shared base: host options, sshd, sudo, stateVersion
-- `hosts/private-vm/full.nix` — real user with `hashedPasswordFile`, Xorg+openbox+xrdp+pipewire+Firefox, home-manager wiring
-- `hosts/private-vm/lima.yaml` — VM resources (40 GiB), `plain: true`, user.name=nixos
-- `modules/nix-dev.nix` — `private-vm-{build,start,rebuild,ssh,rdp,stop}` wrappers; adds `lima` + `freerdp` to PATH on darwin
+- `hosts/private-vm/full.nix` — real user with `uid=1001` + `hashedPasswordFile`, Xorg+openbox+xrdp+pipewire+Firefox, home-manager wiring, LUKS-home `fileSystems` entry
+- `hosts/private-vm/lima.yaml` — VM resources (40 GiB), `plain: true`, user.name=nixos, `private-home` additional disk
+- `modules/nix-dev.nix` — `private-vm-{build,start,rebuild,ssh,rdp,stop,unlock,lock,init-home,keychain-set,project-new}` wrappers; adds `lima` + `freerdp` to PATH on darwin
 - `modules/darwin/nix.nix` — linux-builder config (used by `private-vm-build` only)
 
 ## Workflow
@@ -149,12 +152,12 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 
 - **`.git/objects` permission errors after `nix-rebuild`** — `sudo darwin-rebuild` occasionally creates a git object as root in `.git/objects/<hash>/`. Fix: `sudo chown -R $(whoami):staff .git/objects/`.
 - **`nix build` ignores untracked files** — when you add a new file (e.g. `vars.nix`), `nix build` of a dirty git tree won't see it until you `git add` it. Won't fail loudly — files just go missing in the build.
-- **First `private-vm-rebuild` activation is slow** — dbus-broker reload + restart of every unit cascades for several minutes the first time. Subsequent rebuilds (when most of the closure is already there) take seconds.
-- **`switch-to-configuration-ng` 0.1.0 wedges on first activation** — Rust rewrite enters a userspace tight loop (no syscalls, ~100% CPU, single thread, tiny RSS) after restarting the user dbus-broker. Worked around in `bootstrap.nix` with `system.switch.enableNg = false` + `enable = true`, reverting to the Perl switch. Re-enable once `switch-to-configuration-ng > 0.1.x` and the bug is fixed upstream. If you ever hit the wedge again with ng on: `sudo systemctl kill -s KILL nixos-rebuild-switch-to-configuration.service` + `reset-failed`, then disable ng before retrying.
-- **Killed `private-vm-rebuild` leaves a stale systemd unit** — `nixos-rebuild-switch-to-configuration.service` lingers as "already loaded or has a fragment file". Fix: `private-vm-ssh sudo systemctl reset-failed nixos-rebuild-switch-to-configuration.service` and `... stop ...`, then retry.
-- **Pre-uid-pin home volumes need a one-time chown** — `full.nix` pins `users.users.${user}.uid = 1000` so the LUKS home volume's ownership survives system-disk wipes. Volumes formatted before this pin landed have files owned by whatever uid the dynamic allocator picked (typically 1001 if anything else got 1000 first). Symptom: `home-manager-igor.service` fails fast (~40 ms, exit 1) on first activation after a reset because HM can't write into `~/.config/`. Fix once: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo chown -R 1000:100 /home/${user}'`, then `sudo systemctl restart home-manager-${user}.service`. From the pin onward this won't drift again.
+- **`switch-to-configuration-ng` wedge on first activation — fixed by flake currency** — Earlier nixpkgs-unstable revs (before 2026-05-23) shipped a stc-ng with a tight-loop bug: after restarting the user dbus-broker, the Rust binary would spin at 100% CPU forever (no syscalls, ~4.7 MB RSS, kernel stack empty). Root cause was `nixos-activation.service` being `Type=oneshot` *without* `RemainAfterExit=yes`, so `default.target`'s `Wants=` re-triggered it while stc-ng was also explicitly restarting it — the script kept getting SIGTERMed and respawned. Fixed by nixpkgs commit `663a59e0` (`nixos/activation: run user nixos-activation.service exactly once per switch`). No config workaround needed today; just stay on an unstable rev that includes that commit (anything ≥ 2026-05-23). If you ever see the wedge again: capture `systemctl status nixos-rebuild-switch-to-configuration.service` + `cat /proc/$PID/wchan` + `strace -c` (zero syscalls + empty kstack = userspace spin = this bug class).
+- **Killed `private-vm-rebuild` leaves a stale systemd unit** — `nixos-rebuild-switch-to-configuration.service` lingers as "already loaded or has a fragment file". Fix: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo systemctl reset-failed nixos-rebuild-switch-to-configuration.service'`, then retry. (Use the `nixos` channel, not `private-vm-ssh` — the real user may not exist yet on a fresh VM.)
+- **Changing a user's uid in NixOS requires manual eviction** — NixOS's `update-users-groups.pl` deliberately preserves an existing user's uid even when the config asks for a different one, to avoid orphaning files. Symptom: you set `uid = 1001` in config, rebuild, and `/etc/passwd` still shows the old uid. Fix once: `sudo sed -i '/^USER:/d' /etc/passwd /etc/shadow /etc/group` (replace `USER:`), then re-run `private-vm-rebuild`. The activation creates the user fresh at the configured uid. Then `chown -R NEWUID:NEWGID /home/USER` to relabel any persistent home volume. CAVEAT: `/var/lib/nixos/uid-map` is the canonical state; do NOT pipe it through a missing tool with `sudo tee` (a failed pipe upstream wipes the file via the still-successful `tee`, and the next activation will crash with "malformed JSON" — recover by writing `{}` into both `uid-map` and `gid-map`).
+- **Pre-uid-pin home volumes need a one-time chown** — Volumes provisioned before the explicit `uid = 1001` pin landed in `full.nix` have files owned by whatever uid the allocator picked then. Symptom: `home-manager-${user}.service` fails fast (~40 ms, exit 1) on first activation after a system-disk wipe because HM can't write into `~/.config/`. Fix: `ssh -F ~/.lima/private-vm/ssh.config lima-private-vm 'sudo chown -R 1001:100 /home/${user}'`, then `sudo systemctl restart home-manager-${user}.service`. From the pin onward this won't drift again.
 - **TOFU on first SSH** — first connection adds the VM host key to known_hosts. Acceptable.
-- **Lima's "fatal" exit code in plain mode** — Lima's SSH-readiness check expects a cidata file plain mode never mounts, so the foreground wait would hit a 10-min timeout. We set `--timeout=20s` to cut that short; our own SSH check verifies for real.
+- **Lima's "fatal" exit code in plain mode** — Lima's SSH-readiness check expects a cidata file plain mode never mounts, so the foreground wait would hit a 10-min timeout. We set `--timeout=20s` to cut that short; our own SSH check verifies for real. (Cosmetic — see roadmap item to suppress.)
 
 ## Roadmap
 
@@ -186,18 +189,31 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
   ```
 
 - [ ] **Split `/nix` onto its own Lima named disk** — natural next step toward
-  impermanence. `/nix` (store + db + profiles + gcroots, the whole tree) on a
-  separate persistent volume means a `limactl delete + build + start` cycle
-  doesn't re-download the closure — first rebuild after wipe is just system
-  activation + `/boot` repopulation, seconds instead of minutes. Content-
-  addressable store paths make the split safe; the `/nix/var/nix/db` SQLite
-  must stay with the store (split them and `nix-store --verify` lies). One-
-  time format dance like `private-vm-init-home` but no LUKS (nothing secret
-  in `/nix`). Bootstrap config needs a `fileSystems."/nix"` entry and first-
-  boot handling for an unformatted `/dev/vdc`. Standalone change; do after the
-  current unlock fix is in. Full erase-your-darlings (tmpfs `/` + bind-mounts
-  for `/var/lib/nixos`, `/etc/machine-id`, ssh host keys) is the natural step
-  *after* that, but much more invasive and not required for the speed win.
+  impermanence. `/nix` (whole tree: store + `/nix/var/nix/{db,profiles,gcroots}`)
+  on a separate persistent volume means a `limactl delete + build + start` cycle
+  doesn't re-download the closure — first rebuild after a system-disk wipe is
+  just activation + `/boot` repopulation, seconds instead of minutes. Content-
+  addressable store paths make the split safe; the `/nix/var/nix/db` SQLite must
+  stay with the store (split them and `nix-store --verify` lies — so mount
+  `/nix`, not `/nix/store`). No LUKS — nothing secret in `/nix`, and the closure
+  is reproducible from sources anyway.
+
+  Auto-provision model (matches `private-home` shape): host launcher creates the
+  Lima named disk if absent; bootstrap.nix declares `fileSystems."/nix"` with
+  `nofail` so a blank disk doesn't break boot; a one-shot `private-nix-init.service`
+  detects a blank `/dev/vdc`, `mkfs.ext4 -L private-nix`, `rsync -aHAX /nix/`
+  from the image's baked closure into the new volume, then `systemctl reboot`.
+  Subsequent boots mount the populated volume directly. One reboot on first
+  provisioning is the only ugliness — single-boot mount-ordering tricks are
+  fragile and the reboot is cheap. The init service must refuse to format
+  `/dev/vdc` if it has any unknown signature (only blank or already-`private-nix`
+  proceeds), to keep the auto-format honest.
+
+  Knock-on: in-VM `nix-collect-garbage` becomes more important (persistent
+  cruft) — bundle a weekly `nix.gc` timer with this change. Full
+  erase-your-darlings (tmpfs `/` + bind-mounts for `/var/lib/nixos`,
+  `/etc/machine-id`, ssh host keys) is the natural step *after* this, but much
+  more invasive and not required for the speed win.
 
 ### Network
 

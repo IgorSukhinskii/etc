@@ -22,9 +22,14 @@ in
   # this, NixOS allocates dynamically via /var/lib/nixos/uid-map — state that
   # lives on the root fs and gets wiped, risking a uid drift that would
   # orphan every file on the LUKS volume.
+  #
+  # 1001 (not 1000) because `nixos` (the bootstrap user) is pinned at 1000 in
+  # bootstrap.nix and would collide silently otherwise — NixOS's user-activation
+  # writes both into /etc/passwd without rejecting, and uid → name resolution
+  # then non-deterministically picks one, breaking ownership labels.
   users.users.${user} = {
     isNormalUser = true;
-    uid = 1000;
+    uid = 1001;
     home = "/home/${user}";
     extraGroups = [
       "wheel"
