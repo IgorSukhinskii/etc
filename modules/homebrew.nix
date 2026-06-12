@@ -8,15 +8,13 @@
         onActivation = {
           autoUpdate = false;
           cleanup = "zap";
-          extraFlags = [ "--force-cleanup" ];
+          extraFlags = [ "--force" ];
           upgrade = false;
         };
-        taps = [ "mhaeuser/mhaeuser" ];
         casks = [
           "alt-tab"
           "raycast"
           "bitwarden"
-          "battery-toolkit"
           "qmk-toolbox"
           "vial"
           "figma"
