@@ -5,6 +5,63 @@ let
   limaHomeEnv = builtins.getEnv "LIMA_HOME";
   limaHome = if limaHomeEnv != "" then limaHomeEnv else builtins.getEnv "HOME" + "/.lima";
   limaPubkey = limaHome + "/_config/user.pub";
+  privateVmDiskDevice = pkgs.writeShellScriptBin "private-vm-disk-device" ''
+    set -euo pipefail
+
+    name="''${1:?usage: private-vm-disk-device <lima-disk-name>}"
+    cidata=/run/private-vm/cidata
+    mounted=0
+
+    mkdir -p "$cidata"
+    if ! mountpoint -q "$cidata"; then
+      mount -o ro /dev/disk/by-label/cidata "$cidata"
+      mounted=1
+    fi
+
+    cleanup() {
+      if [[ "$mounted" == 1 ]]; then
+        umount "$cidata"
+      fi
+    }
+    trap cleanup EXIT
+
+    param="$cidata/lima.env"
+    if ! grep -q '^LIMA_CIDATA_DISKS=' "$param" 2>/dev/null; then
+      param="$cidata/param.env"
+    fi
+    if [[ ! -r "$param" ]]; then
+      echo "cidata param.env not readable at $param" >&2
+      exit 1
+    fi
+
+    idx=$(
+      awk -F= -v name="$name" '
+        $1 ~ /^LIMA_CIDATA_DISK_[0-9]+_NAME$/ && $2 == name {
+          sub(/^LIMA_CIDATA_DISK_/, "", $1)
+          sub(/_NAME$/, "", $1)
+          print $1
+          exit
+        }
+      ' "$param"
+    )
+    if [[ -z "$idx" ]]; then
+      echo "Lima disk not found in cidata: $name" >&2
+      exit 1
+    fi
+
+    device=$(
+      awk -F= -v key="LIMA_CIDATA_DISK_''${idx}_DEVICE" '
+        $1 == key { print $2; exit }
+      ' "$param"
+    )
+    if [[ -z "$device" ]]; then
+      echo "Lima disk $name has no DEVICE entry in cidata" >&2
+      exit 1
+    fi
+
+    device="''${device#/dev/}"
+    printf '/dev/%s\n' "$device"
+  '';
 in
 {
   # Image-only profile. Boots, accepts SSH from Lima, runs nixos-rebuild
@@ -80,8 +137,103 @@ in
   boot.loader.grub.enable = lib.mkDefault false;
   boot.growPartition = lib.mkDefault true;
 
+  systemd.services.private-nix-init = {
+    description = "Mount or seed the persistent private-vm /nix volume";
+    wantedBy = [ "sysinit.target" ];
+    before = [
+      "local-fs.target"
+      "sshd.service"
+    ];
+    after = [
+      "systemd-udev-settle.service"
+    ];
+    wants = [
+      "systemd-udev-settle.service"
+    ];
+    path = with pkgs; [
+      coreutils
+      e2fsprogs
+      gawk
+      rsync
+      util-linux
+      privateVmDiskDevice
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      DefaultDependencies = false;
+    };
+    script = ''
+      set -euo pipefail
+
+      mkdir -p /nix
+      if label_device=$(blkid -L private-nix 2>/dev/null); then
+        if ! mountpoint -q /nix; then
+          mount "$label_device" /nix
+        fi
+        exit 0
+      fi
+
+      device=$(private-vm-disk-device private-nix)
+      if wipefs -n "$device" | grep -q .; then
+        echo "$device has an unknown signature; refusing to format private-nix" >&2
+        exit 1
+      fi
+
+      mkfs.ext4 -F -L private-nix "$device"
+      mkdir -p /mnt/nix-seed
+      mount "$device" /mnt/nix-seed
+      rsync -aHAX --numeric-ids /nix/ /mnt/nix-seed/
+      umount /mnt/nix-seed
+      touch /run/private-vm/private-nix-reboot-required
+    '';
+  };
+
+  systemd.services.private-persistence-init = {
+    description = "Format and mount the private-vm persistence volume";
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "local-fs.target"
+      "private-nix-init.service"
+    ];
+    path = with pkgs; [
+      coreutils
+      e2fsprogs
+      gawk
+      util-linux
+      privateVmDiskDevice
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      set -euo pipefail
+
+      mkdir -p /persistence
+      if mountpoint -q /persistence; then
+        exit 0
+      fi
+
+      if label_device=$(blkid -L private-persist 2>/dev/null || blkid -L private-persiste 2>/dev/null); then
+        mount "$label_device" /persistence
+        exit 0
+      fi
+
+      device=$(private-vm-disk-device private-persistence)
+      if wipefs -n "$device" | grep -q .; then
+        echo "$device has an unknown signature; refusing to format private-persistence" >&2
+        exit 1
+      fi
+
+      mkfs.ext4 -F -L private-persist "$device"
+      mount "$device" /persistence
+    '';
+  };
+
   environment.systemPackages = with pkgs; [
     git
+    privateVmDiskDevice
     rsync
   ];
 }

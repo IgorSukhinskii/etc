@@ -2,18 +2,19 @@ vmType: vz
 arch: aarch64
 cpus: 4
 memory: "4GiB"
-# Root disk: nix store + system state. Home data lives on the separate
-# encrypted volume below (additionalDisks), not here.
+# Root disk: disposable instance state. Durable data lives on the named
+# additional disks below.
 disk: "40GiB"
 
-# Encrypted home volume. Create once with:
-#   limactl disk create private-home --size 40GiB
-# Lima stores it in $LIMA_HOME/_disks/private-home/ and does NOT delete it on
-# `limactl delete` — only `limactl disk delete private-home` removes it. The
-# private-vm wrappers set LIMA_HOME to an isolated XDG state path.
-# format:false because we manage LUKS formatting ourselves via private-vm-init-home.
+# Durable named disks. The host wrapper creates/links these before start.
+# format:false because bootstrap services own the ext4 filesystems, and
+# private-vm-init-home owns the encrypted home formatting.
 additionalDisks:
   - name: "private-home"
+    format: false
+  - name: "private-nix"
+    format: false
+  - name: "private-persistence"
     format: false
 
 # Skip Lima's guestagent + lima-specific cidata bootstrap. The image already
@@ -43,7 +44,7 @@ user:
 
 ssh:
   loadDotSSHPubKeys: false
-  localPort: 60022
+  localPort: 60023
 
 containerd:
   system: false

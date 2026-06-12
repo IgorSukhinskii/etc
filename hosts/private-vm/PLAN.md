@@ -130,6 +130,8 @@ Two distinct users:
 
 ## Disk / state model
 
+Focused implementation checklist lives in `hosts/private-vm/VOLUMES.md`.
+
 The target mental model is not "mutable VM as source of truth"; it is
 "disposable instance disk + explicit durable volumes".
 

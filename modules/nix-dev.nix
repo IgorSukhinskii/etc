@@ -10,6 +10,8 @@
     let
       flakeDir = "${config.home.homeDirectory}/etc";
       limaHome = "\${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima";
+      imageLink = "\${XDG_DATA_HOME:-$HOME/.local/share}/private-vm/images/bootstrap";
+      homeDisk = "$HOME/data/private-vm/home.qcow2";
       # User-facing username inside the VM (RDP login, owns home data).
       # Bootstrap/ops user is hardcoded "nixos" — see hosts/private-vm/bootstrap.nix.
       vmUser = inputs.self.privateVm.username;
@@ -20,6 +22,80 @@
       keychainHelper = import ../hosts/private-vm/keychain-helper.nix { inherit pkgs vmUser; };
       touchIdPrompt = keychainHelper.touchIdPrompt;
       privateVmKeychainSet = keychainHelper.privateVmKeychainSet;
+      privateVmEnsureVolumes = pkgs.writeShellScript "private-vm-ensure-volumes" ''
+        set -euo pipefail
+
+        require_home=0
+        if [[ "''${1:-}" == "--require-home" ]]; then
+          require_home=1
+        fi
+
+        export LIMA_HOME="${limaHome}"
+        limactl="${pkgs.lima}/bin/limactl"
+        home_disk="${homeDisk}"
+
+        mkdir -p "$LIMA_HOME/_config" "$(dirname "$home_disk")"
+
+        if [[ ! -f "$LIMA_HOME/_config/user" || ! -f "$LIMA_HOME/_config/user.pub" ]]; then
+          ssh-keygen -q -t ed25519 -N "" -C lima -f "$LIMA_HOME/_config/user"
+        fi
+
+        disk_exists() {
+          "$limactl" disk list 2>/dev/null | awk 'NR > 1 { print $1 }' | grep -Fxq "$1"
+        }
+
+        ensure_lima_disk() {
+          local name="$1"
+          local size="$2"
+          if ! disk_exists "$name"; then
+            "$limactl" disk create "$name" --size "$size" >&2
+          fi
+        }
+
+        ensure_lima_disk private-nix 80GiB
+        ensure_lima_disk private-persistence 8GiB
+
+        home_dir="$LIMA_HOME/_disks/private-home"
+        home_link="$home_dir/datadisk"
+        mkdir -p "$home_dir"
+
+        if [[ -L "$home_link" ]]; then
+          target=$(readlink "$home_link")
+          if [[ "$target" != "$home_disk" ]]; then
+            echo "private-home datadisk points at unexpected target: $target" >&2
+            exit 1
+          fi
+        elif [[ -e "$home_link" ]]; then
+          if [[ -e "$home_disk" ]]; then
+            home_size=$(stat -f%z "$home_disk")
+            link_size=$(stat -f%z "$home_link")
+            if [[ "$home_size" -le 1048576 && "$link_size" -ge 42949672960 ]]; then
+              rm "$home_disk"
+              mv "$home_link" "$home_disk"
+              ln -s "$home_disk" "$home_link"
+            else
+              echo "refusing to overwrite existing Lima private-home datadisk: $home_link" >&2
+              echo "home image also exists at: $home_disk" >&2
+              exit 1
+            fi
+          else
+            mv "$home_link" "$home_disk"
+            ln -s "$home_disk" "$home_link"
+          fi
+        else
+          ln -s "$home_disk" "$home_link"
+        fi
+
+        if [[ "$require_home" == 1 && ! -e "$home_disk" ]]; then
+          truncate -s 40G "$home_disk"
+        fi
+
+        if [[ "$require_home" == 1 && ! -e "$home_disk" ]]; then
+          echo "home disk image missing: $home_disk" >&2
+          echo "run private-vm-init-home to create and format it" >&2
+          exit 1
+        fi
+      '';
 
       nixHmModule = pkgs.writeShellScriptBin "nix-hm-module" ''
         # Print the home-manager programs/<name>.nix module for the HM version
@@ -106,16 +182,11 @@
         set -euo pipefail
 
         export LIMA_HOME="${limaHome}"
-        mkdir -p "$LIMA_HOME/_config"
+        image_link="${imageLink}"
+        mkdir -p "$(dirname "$image_link")"
+        "${privateVmEnsureVolumes}"
 
-        # Ensure Lima's bootstrap identity exists before the impure Nix build
-        # reads it from hosts/private-vm/bootstrap.nix. `limactl info` reports
-        # the path but does not create the key on its own.
-        if [[ ! -f "$LIMA_HOME/_config/user" || ! -f "$LIMA_HOME/_config/user.pub" ]]; then
-          ssh-keygen -q -t ed25519 -N "" -C lima -f "$LIMA_HOME/_config/user"
-        fi
-
-        exec nix build --impure "${flakeDir}#private-vm-image" "$@"
+        exec nix build --impure --out-link "$image_link" "${flakeDir}#private-vm-image" "$@"
       '';
 
       privateVmStart = pkgs.writeShellScriptBin "private-vm-start" ''
@@ -126,20 +197,18 @@
         flake_dir="${flakeDir}"
         template="$flake_dir/hosts/private-vm/lima.yaml"
         export LIMA_HOME="${limaHome}"
+        image_link="${imageLink}"
         rendered="$LIMA_HOME/_private-vm-rendered.yaml"
         limactl="${pkgs.lima}/bin/limactl"
 
-        if [[ ! -f "$LIMA_HOME/_config/user.pub" ]]; then
-          echo "Lima identity missing — rebuilding image for new LIMA_HOME..." >&2
-          "${privateVmBuild}/bin/private-vm-build" >&2
-        fi
+        "${privateVmEnsureVolumes}" --require-home
 
         # Upstream system.build.images names the qcow after system.nixos.label,
         # not "nixos.qcow2" — glob for it.
-        if ! image=$(ls "$flake_dir"/result/*.qcow2 2>/dev/null | head -1) || [[ -z "$image" ]]; then
+        if ! image=$(ls "$image_link"/*.qcow2 2>/dev/null | head -1) || [[ -z "$image" ]]; then
           echo "image missing — building..." >&2
           "${privateVmBuild}/bin/private-vm-build" >&2
-          image=$(ls "$flake_dir"/result/*.qcow2 | head -1)
+          image=$(ls "$image_link"/*.qcow2 | head -1)
         fi
 
         mkdir -p "$(dirname "$rendered")"
@@ -157,18 +226,44 @@
           *)       "$limactl" start --timeout=20s --name=private-vm "$rendered" --tty=false >&2 || true ;;
         esac
 
+        wait_for_ssh() {
+          local attempts="$1"
+          for i in $(seq 1 "$attempts"); do
+            if ssh -F "$LIMA_HOME/private-vm/ssh.config" -o BatchMode=yes \
+                 -o ConnectTimeout=2 lima-private-vm true 2>/dev/null; then
+              return 0
+            fi
+            sleep 1
+          done
+          return 1
+        }
+
         # Wait for SSH. cloud-init runs at first boot so this can take longer
         # on a fresh VM (image cold-start + cloud-init + sshd).
-        for i in {1..90}; do
-          if ssh -F "$LIMA_HOME/private-vm/ssh.config" -o BatchMode=yes \
-               -o ConnectTimeout=2 lima-private-vm true 2>/dev/null; then
-            echo "VM ready" >&2
+        if ! wait_for_ssh 90; then
+          echo "VM did not become SSH-reachable in 90s" >&2
+          exit 1
+        fi
+
+        if ssh -F "$LIMA_HOME/private-vm/ssh.config" lima-private-vm \
+             "test -e /run/private-vm/private-nix-reboot-required" 2>/dev/null; then
+          echo "private-nix seeded — rebooting once to mount persistent /nix" >&2
+          ssh -F "$LIMA_HOME/private-vm/ssh.config" lima-private-vm "sudo systemctl reboot" 2>/dev/null || true
+          for i in {1..30}; do
+            if ! ssh -F "$LIMA_HOME/private-vm/ssh.config" -o BatchMode=yes \
+                 -o ConnectTimeout=2 lima-private-vm true 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if wait_for_ssh 120; then
+            echo "VM ready after private-nix reboot" >&2
             exit 0
           fi
-          sleep 1
-        done
-        echo "VM did not become SSH-reachable in 90s" >&2
-        exit 1
+          echo "VM did not return after private-nix seed reboot" >&2
+          exit 1
+        fi
+        echo "VM ready" >&2
       '';
 
       privateVmSsh = pkgs.writeShellScriptBin "private-vm-ssh" ''
@@ -214,7 +309,8 @@
         # before running nixos-rebuild. home-manager activation writes dotfiles
         # to /home/${vmUser}; without the encrypted volume mounted those writes
         # land on the root disk and get shadowed on first unlock.
-        if ssh -F "$ssh_cfg" lima-private-vm "sudo cryptsetup isLuks /dev/vdb" 2>/dev/null; then
+        if ssh -F "$ssh_cfg" lima-private-vm \
+             'dev=$(sudo private-vm-disk-device private-home) && sudo cryptsetup isLuks "$dev"' 2>/dev/null; then
           if ! ssh -F "$ssh_cfg" lima-private-vm "mountpoint -q /home/${vmUser}" 2>/dev/null; then
             echo "home volume not mounted — unlocking..." >&2
             "${privateVmUnlock}/bin/private-vm-unlock"
@@ -352,36 +448,33 @@
       '';
 
       privateVmInitHome = pkgs.writeShellScriptBin "private-vm-init-home" ''
-        # One-time: format /dev/vdb as LUKS + ext4, mount at /home/${vmUser}.
+        # One-time: format the private-home disk as LUKS + ext4, mount at /home/${vmUser}.
         # Run AFTER private-vm-keychain-set and BEFORE the first private-vm-rebuild.
         # SSH uses the nixos bootstrap account — igor doesn't exist yet at this stage.
-        # Pre-requisite:
-        #   LIMA_HOME=${limaHome} limactl disk create private-home --size 40GiB
         set -euo pipefail
 
         export LIMA_HOME="${limaHome}"
         ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
         vm_nixos() { ssh -F "$ssh_cfg" lima-private-vm "$@"; }
 
+        "${privateVmEnsureVolumes}" --require-home
         "${privateVmStart}/bin/private-vm-start"
 
-        # Verify the additional disk is attached
-        if ! vm_nixos "test -b /dev/vdb" 2>/dev/null; then
-          echo "error: /dev/vdb not found." >&2
-          echo "Create the Lima disk first:" >&2
-          echo "  LIMA_HOME=$LIMA_HOME ${pkgs.lima}/bin/limactl disk create private-home --size 40GiB" >&2
+        home_device=$(vm_nixos "sudo private-vm-disk-device private-home")
+        if [[ -z "$home_device" ]]; then
+          echo "error: private-home disk not found in Lima cidata." >&2
           exit 1
         fi
 
         # Guard: refuse to re-format an already-initialized LUKS volume
-        if vm_nixos "sudo cryptsetup isLuks /dev/vdb" 2>/dev/null; then
-          echo "error: /dev/vdb is already a LUKS volume — home already initialized." >&2
+        if vm_nixos "sudo cryptsetup isLuks '$home_device'" 2>/dev/null; then
+          echo "error: $home_device is already a LUKS volume — home already initialized." >&2
           echo "Use private-vm-unlock to open it." >&2
-          echo "To start over: limactl disk delete private-home && limactl disk create private-home --size 40GiB" >&2
+          echo "To start over, remove $HOME/data/private-vm/home.qcow2 manually." >&2
           exit 1
         fi
 
-        echo "This will format /dev/vdb as a LUKS-encrypted ext4 home volume." >&2
+        echo "This will format $home_device as a LUKS-encrypted ext4 home volume." >&2
         echo "ALL DATA on it will be destroyed. Type 'yes' to continue:" >&2
         read -r confirm
         [[ "$confirm" == "yes" ]] || { echo "Aborted." >&2; exit 1; }
@@ -392,11 +485,11 @@
 
         echo "Formatting LUKS container..." >&2
         printf '%s' "$pw" | vm_nixos \
-          "sudo cryptsetup luksFormat --batch-mode --key-file=- /dev/vdb"
+          "sudo cryptsetup luksFormat --batch-mode --key-file=- '$home_device'"
 
         echo "Opening LUKS container..." >&2
         printf '%s' "$pw" | vm_nixos \
-          "sudo cryptsetup luksOpen --key-file=- /dev/vdb private-home"
+          "sudo cryptsetup luksOpen --key-file=- '$home_device' private-home"
 
         echo "Creating ext4 filesystem..." >&2
         vm_nixos "sudo mkfs.ext4 -L private-home /dev/mapper/private-home"
@@ -433,8 +526,9 @@
         # Open LUKS container (passphrase via stdin). Guard for idempotency:
         # if /dev/mapper/private-home already exists, luksOpen would error.
         if ! ssh -F "$ssh_cfg" lima-private-vm "[ -e /dev/mapper/private-home ]" 2>/dev/null; then
+          home_device=$(ssh -F "$ssh_cfg" lima-private-vm "sudo private-vm-disk-device private-home")
           printf '%s' "$pw" | ssh -F "$ssh_cfg" lima-private-vm \
-            "sudo cryptsetup luksOpen --key-file=- /dev/vdb private-home"
+            "sudo cryptsetup luksOpen --key-file=- '$home_device' private-home"
         fi
 
         # Explicit mount (not fstab-based): fstab entry comes from full.nix,
@@ -448,7 +542,10 @@
       privateVmLock = pkgs.writeShellScriptBin "private-vm-lock" ''
         # Unmount the home volume and close the LUKS container.
         set -euo pipefail
-        "${privateVmSsh}/bin/private-vm-ssh" \
+        "${privateVmStart}/bin/private-vm-start"
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
+        ssh -F "$ssh_cfg" lima-private-vm \
           "sudo umount /home/${vmUser} && sudo cryptsetup luksClose private-home"
         echo "home volume locked" >&2
       '';
