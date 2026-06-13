@@ -56,13 +56,13 @@
           vm_dir=$(grep '^VM_DIR=' "$path/.private-vm" | cut -d= -f2-)
           [[ -z "$vm_dir" ]] && vm_dir="~/projects/$name"
 
-          private-vm-start
-          private-vm-unlock
+          vm start
+          vm unlock
 
           tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
           tmux set-option -t "$name" default-command \
-            "private-vm-ssh -t 'cd $vm_dir && exec \$SHELL'"
-          tmux set-environment -t "$name" PRIVATE_VM_SSH "private-vm-ssh"
+            "vm ssh -t 'cd $vm_dir && exec \$SHELL'"
+          tmux set-environment -t "$name" PRIVATE_VM "1"
           tmux set-environment -t "$name" PRIVATE_VM_DIR "$vm_dir"
         else
           tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
@@ -85,7 +85,7 @@
       #   green  — private-vm session, active pane is in SSH
       #   red    — private-vm session, active pane has dropped out of SSH (warning)
       #   yellow — all other (host) sessions
-      sessionPillColor = "#{?#{E:PRIVATE_VM_SSH},#{?#{==:#{pane_current_command},ssh},${green},${red}},${yellow}}";
+      sessionPillColor = "#{?#{E:PRIVATE_VM},#{?#{==:#{pane_current_command},ssh},${green},${red}},${yellow}}";
       # Primitive: left cap + content on `color` bg, then reset to default.
       # Standalone-safe (resets bg after content) and composable (pillRight overrides bg next).
       pillLeft =
