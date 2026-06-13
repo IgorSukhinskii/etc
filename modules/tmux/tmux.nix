@@ -79,7 +79,13 @@
       fg = "colour7"; # ANSI 7  = base05 (foreground)
       yellow = "colour3"; # ANSI 3  = base0A (yellow)
       blue = "colour4"; # ANSI 4  = base0D (blue)
-      # (omitting red/orange/brown — add if needed)
+      green = "colour2"; # ANSI 2  = base0B (green)
+      red = "colour1"; # ANSI 1  = base08 (red)
+      # Dynamic color for the session pill:
+      #   green  — private-vm session, active pane is in SSH
+      #   red    — private-vm session, active pane has dropped out of SSH (warning)
+      #   yellow — all other (host) sessions
+      sessionPillColor = "#{?#{E:PRIVATE_VM_SSH},#{?#{==:#{pane_current_command},ssh},${green},${red}},${yellow}}";
       # Primitive: left cap + content on `color` bg, then reset to default.
       # Standalone-safe (resets bg after content) and composable (pillRight overrides bg next).
       pillLeft =
@@ -153,6 +159,7 @@
         set -g extended-keys on
         set -g extended-keys-format csi-u
         set -g focus-events on
+        set-hook -g pane-focus-in "refresh-client -S"
 
         # True color + image passthrough (sixel/kitty for ghostty)
         set -as terminal-features ",xterm-ghostty:RGB:extkeys"
@@ -216,7 +223,7 @@
         # Session pill: yellow background
         set -g status-left '${
           pill {
-            color = yellow;
+            color = sessionPillColor;
             content = " #S ";
             bold = true;
           }
