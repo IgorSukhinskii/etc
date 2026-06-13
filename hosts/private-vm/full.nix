@@ -112,6 +112,69 @@ in
     '';
   };
 
+  # Home Manager activation invokes `nix` as the user. During `nixos-rebuild
+  # switch`, a directly-started nix-daemon can leave the socket present but
+  # refusing connections; repair that as root before the user unit runs.
+  systemd.services.private-nix-daemon-ready = {
+    description = "Ensure the Nix daemon socket accepts connections";
+    path = with pkgs; [
+      coreutils
+      nix
+      systemd
+    ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      wait_for_nix() {
+        for _ in $(seq 1 30); do
+          if NIX_REMOTE=daemon nix store ping >/dev/null 2>&1; then
+            return 0
+          fi
+          sleep 1
+        done
+        return 1
+      }
+
+      if wait_for_nix; then
+        exit 0
+      fi
+
+      systemctl stop nix-daemon.service nix-daemon.socket || true
+      rm -f /nix/var/nix/daemon-socket/socket
+      systemctl reset-failed nix-daemon.service nix-daemon.socket || true
+      systemctl start nix-daemon.socket
+      if wait_for_nix; then
+        exit 0
+      fi
+
+      echo "nix daemon did not become reachable before Home Manager activation" >&2
+      exit 1
+    '';
+  };
+
+  systemd.services."home-manager-${user}" = {
+    after = [
+      "private-nix-daemon-ready.service"
+      "nix-daemon.socket"
+    ];
+    wants = [
+      "private-nix-daemon-ready.service"
+      "nix-daemon.socket"
+    ];
+    path = with pkgs; [
+      nix
+    ];
+    preStart = ''
+      for _ in $(seq 1 30); do
+        if NIX_REMOTE=daemon nix store ping >/dev/null 2>&1; then
+          exit 0
+        fi
+        sleep 1
+      done
+      echo "nix daemon did not become reachable before Home Manager activation" >&2
+      exit 1
+    '';
+  };
+
   # Encrypted home volume. Mounted manually via private-vm-unlock (host script)
   # after Touch ID + cryptsetup luksOpen. noauto: systemd does not attempt to
   # mount at boot (the LUKS container is closed until explicitly unlocked).

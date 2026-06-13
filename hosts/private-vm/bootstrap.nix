@@ -139,12 +139,10 @@ in
 
   systemd.services.private-nix-init = {
     description = "Mount or seed the persistent private-vm /nix volume";
-    wantedBy = [ "sysinit.target" ];
-    before = [
-      "local-fs.target"
-      "sshd.service"
-    ];
+    wantedBy = [ "multi-user.target" ];
+    before = [ "sshd.service" ];
     after = [
+      "local-fs.target"
       "systemd-udev-settle.service"
     ];
     wants = [
@@ -161,16 +159,28 @@ in
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      DefaultDependencies = false;
     };
     script = ''
       set -euo pipefail
 
-      mkdir -p /nix
+      mkdir -p /run/private-vm
+
       if label_device=$(blkid -L private-nix 2>/dev/null); then
-        if ! mountpoint -q /nix; then
-          mount "$label_device" /nix
+        current_system=$(readlink -f /run/current-system)
+        current_store_path="''${current_system#/nix/}"
+
+        mkdir -p /mnt/nix-seed
+        mount "$label_device" /mnt/nix-seed
+        if [[ ! -e "/mnt/nix-seed/$current_store_path" ]]; then
+          rsync -aHAX --numeric-ids /nix/ /mnt/nix-seed/
+          umount /mnt/nix-seed
+          touch /run/private-vm/private-nix-reboot-required
+          exit 0
         fi
+        umount /mnt/nix-seed
+
+        mkdir -p /nix
+        mount "$label_device" /nix
         exit 0
       fi
 

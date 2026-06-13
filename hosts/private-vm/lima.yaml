@@ -44,7 +44,7 @@ user:
 
 ssh:
   loadDotSSHPubKeys: false
-  localPort: 60023
+  localPort: 60022
 
 containerd:
   system: false
