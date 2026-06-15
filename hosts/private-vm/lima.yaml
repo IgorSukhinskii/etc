@@ -1,7 +1,20 @@
-vmType: vz
+vmType: qemu
 arch: aarch64
 cpus: 4
-memory: "4GiB"
+# Ceiling, not a reservation: vz demand-faults pages and macOS compresses
+# cold ones, so idle RSS sits well below this. Sized for nvim + a coding
+# agent + a browser without thrashing.
+memory: "8GiB"
+
+# Memory ballooning (cooperative reclaim): not enabled.
+#
+# Lima 2.1.2 links the vz balloon device library but does not expose a
+# user-facing yaml field for it (no `memoryBalloon:` knob). The guest is
+# prepared — `boot.kernelModules = [ "virtio_balloon" ]` in full.nix — so
+# this flips on the day Lima upstream surfaces the option (or we switch
+# to `vmType: qemu` and pass `-device virtio-balloon-pci` via vmOpts).
+# Until then we rely on macOS's passive compression + the in-guest
+# drop-caches timer (also in full.nix) to keep idle RSS down.
 # Root disk: disposable instance state. Durable data lives on the named
 # additional disks below.
 disk: "40GiB"

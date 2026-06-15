@@ -175,6 +175,22 @@ in
     '';
   };
 
+  # Mount /nix from the external private-nix volume in stage-1. Required so
+  # the initrd can find the closure pointed at by init=<path> on the kernel
+  # cmdline — gens 2..N's closures live only on private-nix, never on rootfs.
+  # Bootstrap.nix deliberately does NOT carry this: the bootstrap image is
+  # self-sufficient and its initrd only needs rootfs /nix. After first boot,
+  # `private-nix-init` formats/seeds the volume; every subsequent in-VM
+  # `nixos-rebuild switch` produces an initrd (from this full.nix) that
+  # mounts /nix here, making cold boot of new generations work. Without
+  # this, gens 2..N only survive as live-activated user-space pivots and
+  # any cold restart drops to emergency mode.
+  fileSystems."/nix" = {
+    device = "/dev/disk/by-label/private-nix";
+    fsType = "ext4";
+    neededForBoot = true;
+  };
+
   # Encrypted home volume. Mounted manually via private-vm-unlock (host script)
   # after Touch ID + cryptsetup luksOpen. noauto: systemd does not attempt to
   # mount at boot (the LUKS container is closed until explicitly unlocked).
@@ -191,4 +207,53 @@ in
   };
 
   networking.firewall.allowedTCPPorts = [ 3389 ];
+
+  # Guest-side driver for virtio-balloon-pci. Under qemu (Phase 1) the
+  # host wrapper attaches the device with free-page-reporting=on, so the
+  # guest's virtio_balloon driver proactively reports newly-freed PFNs
+  # to qemu. On macOS qemu MADV_FREE_REUSABLE's the reported pages —
+  # they stay in qemu's RSS but are marked purgeable (instantly
+  # reclaimable under host pressure, no swap I/O).
+  boot.kernelModules = [ "virtio_balloon" ];
+
+  # Periodic page-cache drop. FPR only reports pages the *guest*
+  # considers free (in the buddy allocator). Page cache pages are
+  # "used, but reclaimable" from the guest's perspective and never get
+  # returned to the host on their own — so without this, Linux fills
+  # RAM with file-backed cache from build/I/O activity and the host
+  # holds that footprint forever. Echoing 3 to drop_caches forces the
+  # guest to reclaim cache + reclaimable slab → those pages become
+  # guest-free → FPR reports them → macOS marks them purgeable. Net
+  # effect: keeps qemu's "instantly reclaimable" pool large, so host
+  # memory pressure resolves via cheap MADV_FREE reclaim rather than
+  # via compressing or swapping qemu's RSS.
+  #
+  # Only runs under low load to avoid yanking cache out from under an
+  # active workload (the kernel re-reads pages, but the latency spike is
+  # visible). Cheap enough at 15-minute cadence; safe to tune.
+  systemd.services.private-vm-drop-caches = {
+    description = "Drop page cache + reclaimable slab when guest is idle";
+    serviceConfig.Type = "oneshot";
+    path = [
+      pkgs.coreutils
+      pkgs.gawk
+    ];
+    script = ''
+      load1=$(awk '{print $1}' /proc/loadavg)
+      if awk "BEGIN { exit !($load1 < 0.5) }"; then
+        sync
+        echo 3 > /proc/sys/vm/drop_caches
+      fi
+    '';
+  };
+
+  systemd.timers.private-vm-drop-caches = {
+    description = "Periodic idle page-cache drop";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "10min";
+      OnUnitActiveSec = "15min";
+      AccuracySec = "1min";
+    };
+  };
 }

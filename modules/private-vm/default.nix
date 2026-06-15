@@ -18,6 +18,48 @@
       touchIdPrompt = keychainHelper.touchIdPrompt;
       vmKeychainSet = keychainHelper.privateVmKeychainSet;
 
+      # Lima looks up qemu via $QEMU_SYSTEM_AARCH64 before PATH (see Lima's
+      # pkg/driver/qemu/qemu.go Exe()). We point that env var at this wrapper
+      # so Lima invokes it exactly as it would the real qemu. On real VM
+      # start we inject -device virtio-balloon-pci,free-page-reporting=on so
+      # the guest's virtio_balloon driver can return freed pages to the host
+      # (FPR -> qemu MADV_DONTNEED). Probe invocations (--version, -accel
+      # help, etc.) don't carry -machine virt, so they pass through unchanged.
+      realQemu = "${pkgs.qemu}/bin/qemu-system-aarch64";
+      qemuWrapperBin = pkgs.writeShellApplication {
+        name = "qemu-system-aarch64";
+        runtimeInputs = [ ];
+        text = ''
+          # Detect "real VM start" vs Lima probe (--version, -accel help,
+          # etc.). Real starts always include the aarch64 `virt` machine,
+          # passed by Lima 2.x as a single argv element `virt,accel=hvf`
+          # (not bare `virt`). Match the prefix.
+          is_start=0
+          for arg in "$@"; do
+            if [[ "$arg" == virt || "$arg" == virt,* ]]; then
+              is_start=1
+              break
+            fi
+          done
+
+          if (( is_start == 0 )); then
+            exec ${realQemu} "$@"
+          fi
+
+          exec ${realQemu} "$@" \
+            -device virtio-balloon-pci,free-page-reporting=on
+        '';
+      };
+      # Lima resolves firmware (EDK2 edk2-aarch64-code.fd) relative to the
+      # qemu binary's directory. Compose a small prefix where bin/ holds our
+      # wrapper and share/ symlinks pkgs.qemu's share tree (firmware lives
+      # there).
+      qemuWrapper = pkgs.runCommand "qemu-system-aarch64-fpr-wrapper" { } ''
+        mkdir -p $out/bin
+        ln -s ${qemuWrapperBin}/bin/qemu-system-aarch64 $out/bin/qemu-system-aarch64
+        ln -s ${pkgs.qemu}/share $out/share
+      '';
+
       vmEnsureVolumes = pkgs.writeShellScript "vm-ensure-volumes" ''
         set -euo pipefail
 
@@ -147,6 +189,12 @@
         image_link="${imageLink}"
         rendered="$LIMA_HOME/_private-vm-rendered.yaml"
         limactl="${pkgs.lima}/bin/limactl"
+
+        # Lima looks up qemu via this env var before falling back to PATH
+        # (Lima's pkg/driver/qemu/qemu.go Exe()). The wrapper injects
+        # -device virtio-balloon-pci,free-page-reporting=on so freed guest
+        # pages are returned to the macOS host (Free Page Reporting).
+        export QEMU_SYSTEM_AARCH64="${qemuWrapper}/bin/qemu-system-aarch64"
 
         "${vmEnsureVolumes}" --require-home
 
@@ -562,6 +610,7 @@
       ++ lib.optionals pkgs.stdenv.isDarwin [
         pkgs.lima
         pkgs.freerdp
+        qemuWrapper
       ];
     };
 }
