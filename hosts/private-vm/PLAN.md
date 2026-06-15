@@ -13,7 +13,7 @@ Operational end-to-end, including reset / re-provisioning paths:
 - ✅ `private-vm-rebuild` pushes credentials + rsyncs `etc/` + runs in-VM `nixos-rebuild switch`
 - ✅ SSH-as-`igor` works for terminal/tmux (per-user ControlPath, with `ControlMaster=auto`)
 - ✅ `private-vm-rdp` launches `sdl-freerdp` (CoreAudio backend) and reaches xrdp
-- ✅ LUKS-encrypted `/home/${user}` on separate Lima named disk, Touch ID + Keychain unlock, idempotent
+- ✅ LUKS-encrypted `/home/${user}` on separate Lima named disk, Touch ID unlock via Secure Enclave-backed age identity (`age-plugin-se`), idempotent
 - ✅ Virgin-VM provisioning works without chicken-and-egg: `private-vm-unlock` runs entirely over the `nixos` SSH channel and explicit-mounts the LUKS volume, so the first rebuild can establish the real user against an already-mounted home
 - ✅ uid pins (`nixos=1000`, `igor=1001`) — encrypted-home ownership survives system-disk wipes; the two users no longer collide on uid 1000
 - ✅ Host-side `pkgs.qemu` overlay-pinned to `nixos-26.05` (qemu 10.2.2) so the linux-builder VM doesn't hit the macOS-26 HVF assertion in qemu 11.0.0
@@ -125,7 +125,7 @@ Two distinct users:
 - `hosts/private-vm/config.nix` — shared base: host options, sshd, sudo, stateVersion
 - `hosts/private-vm/full.nix` — real user with `uid=1001` + `hashedPasswordFile`, Xorg+openbox+xrdp+pipewire+Firefox, home-manager wiring, LUKS-home `fileSystems` entry
 - `hosts/private-vm/lima.yaml` — VM resources (40 GiB), `plain: true`, user.name=nixos, `private-home` additional disk
-- `modules/nix-dev.nix` — `private-vm-{build,start,rebuild,ssh,rdp,stop,unlock,lock,init-home,keychain-set,project-new}` wrappers; adds `lima` + `freerdp` to PATH on darwin
+- `modules/nix-dev.nix` — `private-vm-{build,start,rebuild,ssh,rdp,stop,unlock,lock,init-home,secret-set,project-new}` wrappers; adds `lima` + `freerdp` to PATH on darwin
 - `modules/darwin/nix.nix` — linux-builder config (used by `private-vm-build` only) + `pkgs.qemu` overlay pin
 
 ## Disk / state model
@@ -251,14 +251,14 @@ lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
   `~/.lima/private-vm` state is not migrated; recreate from scratch while the
   VM still has no important data.
 
-- [x] **Separate `/home` volume + LUKS encryption + Touch ID unlock** — Lima named disk (`limactl disk create private-home --size 40GiB`, survives `limactl delete`). `/dev/vdb` formatted as LUKS + ext4 via `private-vm-init-home` (one-time, before first `private-vm-rebuild`). NixOS mounts it at `/home/${user}` with `nofail noauto`; boot proceeds with volume locked. `private-vm-unlock` (host script): Touch ID via `/usr/bin/swift hosts/private-vm/keychain-helper.swift` → passphrase from macOS Keychain → SSH `cryptsetup luksOpen` + `mount`. `private-vm-lock`: reverse. `private-vm-rebuild` + `private-vm-rdp` + sessionizer all call `private-vm-unlock` automatically (idempotent). `private-vm-keychain-set`: one-time passphrase setup; always keep an offline backup in your password manager.
+- [x] **Separate `/home` volume + LUKS encryption + Touch ID unlock** — Lima named disk (`limactl disk create private-home --size 40GiB`, survives `limactl delete`). `/dev/vdb` formatted as LUKS + ext4 via `private-vm-init-home` (one-time, before first `private-vm-rebuild`). NixOS mounts it at `/home/${user}` with `nofail noauto`; boot proceeds with volume locked. `private-vm-unlock` (host script): pipes `private-vm-secret get` (decrypts `~/.config/private-vm/luks.age` against a Secure Enclave-backed age identity, `age-plugin-se` prompts Touch ID) into a hardened SSH transport that runs `cryptsetup luksOpen --key-file=-` + `mount`. `private-vm-lock`: reverse. `private-vm-rebuild` + sessionizer call `private-vm-unlock` automatically (idempotent). `private-vm-secret-set`: one-time passphrase setup; always keep an offline backup in your password manager. (History: an earlier attempt used the macOS Keychain with `kSecAttrAccessControl` biometryCurrentSet, but that path is blocked by an entitlement check that ad-hoc-signed binaries cannot satisfy; switching to the Secure Enclave via the maintainer-signed `age-plugin-se` sidestepped the requirement entirely.)
 
   One-time setup sequence:
   ```
   LIMA_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima" \
     limactl disk create private-home --size 40GiB
   private-vm-build && private-vm-start
-  private-vm-keychain-set
+  private-vm-secret-set
   private-vm-init-home
   private-vm-rebuild
   ```

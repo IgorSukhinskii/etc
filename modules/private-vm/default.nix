@@ -7,6 +7,10 @@
   flake.darwinModules.private-vm =
     { ... }:
     {
+      # age-plugin-se from Homebrew: Touch ID-gated Secure Enclave access for
+      # the LUKS passphrase store. A nix-built copy of the plugin can't talk
+      # to the SE (codesigning context not preserved through the sandbox).
+      homebrew.brews = [ "age-plugin-se" ];
       homebrew.casks = [ "xpra" ];
     };
 
@@ -24,9 +28,8 @@
       homeDisk = "$HOME/data/private-vm/home.qcow2";
       vmUser = inputs.self.privateVm.username;
 
-      keychainHelper = import ../../hosts/private-vm/keychain-helper.nix { inherit pkgs vmUser; };
-      touchIdPrompt = keychainHelper.touchIdPrompt;
-      vmKeychainSet = keychainHelper.privateVmKeychainSet;
+      secretHelper = import ../../hosts/private-vm/secret-helper.nix { inherit pkgs vmUser; };
+      privateVmSecret = secretHelper.privateVmSecret;
 
       # Lima looks up qemu via $QEMU_SYSTEM_AARCH64 before PATH (see Lima's
       # pkg/driver/qemu/qemu.go Exe()). We point that env var at this wrapper
@@ -438,7 +441,7 @@
 
       vmInitHome = pkgs.writeShellScriptBin "vm-init-home" ''
         # One-time: format the private-home disk as LUKS + ext4, mount at /home/${vmUser}.
-        # Run AFTER vm keychain-set and BEFORE the first vm rebuild.
+        # Run AFTER vm secret-set and BEFORE the first vm rebuild.
         # SSH uses the nixos bootstrap account — ${vmUser} doesn't exist yet at this stage.
         set -euo pipefail
 
@@ -468,23 +471,44 @@
         read -r confirm
         [[ "$confirm" == "yes" ]] || { echo "Aborted." >&2; exit 1; }
 
-        # Touch ID + passphrase from Keychain
-        /usr/bin/swift "${touchIdPrompt}" "Initialize private-vm home volume"
-        pw=$(security find-generic-password -a "${vmUser}" -s private-vm-luks -w)
-
-        echo "Formatting LUKS container..." >&2
-        printf '%s' "$pw" | vm_nixos \
-          "sudo cryptsetup luksFormat --batch-mode --key-file=- '$home_device'"
-
-        echo "Opening LUKS container..." >&2
-        printf '%s' "$pw" | vm_nixos \
-          "sudo cryptsetup luksOpen --key-file=- '$home_device' private-home"
-
-        echo "Creating ext4 filesystem..." >&2
-        vm_nixos "sudo mkfs.ext4 -L private-home /dev/mapper/private-home"
-
-        echo "Mounting..." >&2
-        vm_nixos "sudo mkdir -p /home/${vmUser} && sudo mount /dev/mapper/private-home /home/${vmUser}"
+        # Touch ID is enforced inside `private-vm-secret get` by the
+        # Secure Enclave's access control on the age identity's private
+        # key — no separate app-level prompt.
+        #
+        # init-home needs the passphrase for two cryptsetup invocations
+        # (luksFormat then luksOpen). We prefer one Touch ID prompt over
+        # two, so we pipe the secret into a single SSH session that
+        # consumes it once and reuses it via a guest-side shell variable.
+        # The exposure is guest-side only; on the host the secret never
+        # lands in a shell variable, env var, or temp file.
+        #
+        # `pw=$(cat)` slurps stdin verbatim — the secret has no trailing
+        # newline (cryptsetup's --key-file=- treats stdin bytes as raw key
+        # data, including any trailing newline). `read -r` would refuse a
+        # final line without a newline under `set -e`.
+        #
+        # Sensitive SSH bypasses the persistent ControlMaster socket so
+        # the secret-carrying channel is its own transport.
+        echo "Formatting and opening LUKS container, then mounting..." >&2
+        ${privateVmSecret}/bin/private-vm-secret get | ssh -F "$ssh_cfg" \
+          -o ControlMaster=no \
+          -o ControlPath=none \
+          -o ControlPersist=no \
+          -o ForwardAgent=no \
+          -o ClearAllForwardings=yes \
+          -o PermitLocalCommand=no \
+          -o RequestTTY=no \
+          -o LogLevel=ERROR \
+          lima-private-vm "
+            set -euo pipefail
+            pw=\$(cat)
+            printf '%s' \"\$pw\" | sudo cryptsetup luksFormat --batch-mode --key-file=- '$home_device'
+            printf '%s' \"\$pw\" | sudo cryptsetup luksOpen   --key-file=- '$home_device' private-home
+            unset pw
+            sudo mkfs.ext4 -L private-home /dev/mapper/private-home
+            sudo mkdir -p /home/${vmUser}
+            sudo mount /dev/mapper/private-home /home/${vmUser}
+          "
 
         echo "" >&2
         echo "Home volume initialized and mounted at /home/${vmUser}." >&2
@@ -508,16 +532,33 @@
           exit 0
         fi
 
-        # Touch ID + passphrase from Keychain
-        /usr/bin/swift "${touchIdPrompt}" "Unlock private-vm home volume"
-        pw=$(security find-generic-password -a "${vmUser}" -s private-vm-luks -w)
+        # Sensitive SSH: per-invocation transport (no ControlMaster reuse,
+        # no agent forwarding, no port/x forwardings, no local command).
+        # See TOUCHID-SSH-HARDENING.md §4–§5.
+        ssh_secret() {
+          ssh -F "$ssh_cfg" \
+            -o ControlMaster=no \
+            -o ControlPath=none \
+            -o ControlPersist=no \
+            -o ForwardAgent=no \
+            -o ClearAllForwardings=yes \
+            -o PermitLocalCommand=no \
+            -o RequestTTY=no \
+            -o LogLevel=ERROR \
+            lima-private-vm "$@"
+        }
 
-        # Open LUKS container (passphrase via stdin). Guard for idempotency:
-        # if /dev/mapper/private-home already exists, luksOpen would error.
+        # Open LUKS container. Guard for idempotency: if the mapper
+        # device already exists, skip the second luksOpen (which would
+        # error). The secret never lands in a host-side shell variable —
+        # `private-vm-secret get` writes the raw passphrase bytes to stdout
+        # (no trailing newline issues — `cryptsetup --key-file=-` reads up
+        # to the first newline or EOF) and pipes directly into the remote
+        # `cryptsetup --key-file=-`.
         if ! ssh -F "$ssh_cfg" lima-private-vm "[ -e /dev/mapper/private-home ]" 2>/dev/null; then
           home_device=$(ssh -F "$ssh_cfg" lima-private-vm "sudo private-vm-disk-device private-home")
-          printf '%s' "$pw" | ssh -F "$ssh_cfg" lima-private-vm \
-            "sudo cryptsetup luksOpen --key-file=- '$home_device' private-home"
+          ${privateVmSecret}/bin/private-vm-secret get | \
+            ssh_secret "sudo cryptsetup luksOpen --key-file=- '$home_device' private-home"
         fi
 
         # Explicit mount (not fstab-based): fstab entry comes from full.nix,
@@ -577,8 +618,10 @@
           lock)         exec "${vmLock}/bin/vm-lock" "$@" ;;
           unlock)       exec "${vmUnlock}/bin/vm-unlock" "$@" ;;
           new)          exec "${vmNew}/bin/vm-new" "$@" ;;
-          init-home)    exec "${vmInitHome}/bin/vm-init-home" "$@" ;;
-          keychain-set) exec "${vmKeychainSet}/bin/private-vm-keychain-set" "$@" ;;
+          init-home)       exec "${vmInitHome}/bin/vm-init-home" "$@" ;;
+          secret-set)      exec "${privateVmSecret}/bin/private-vm-secret" set "$@" ;;
+          secret-get)      exec "${privateVmSecret}/bin/private-vm-secret" get "$@" ;;
+          secret-delete)   exec "${privateVmSecret}/bin/private-vm-secret" delete "$@" ;;
           *)
             echo "usage: vm <command> [args]" >&2
             echo "" >&2
@@ -593,7 +636,9 @@
             echo "  unlock         open and mount the encrypted home volume" >&2
             echo "  new <name>     create a new VM-backed project" >&2
             echo "  init-home      one-time: format and mount the home LUKS volume" >&2
-            echo "  keychain-set   one-time: store the LUKS passphrase in Keychain" >&2
+            echo "  secret-set [--replace]   store the LUKS passphrase (Secure Enclave + Touch ID)" >&2
+            echo "  secret-get               print the LUKS passphrase to stdout (Touch ID required)" >&2
+            echo "  secret-delete            remove the local secret + identity files" >&2
             exit 1 ;;
         esac
       '';
