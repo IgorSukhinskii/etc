@@ -1,5 +1,15 @@
 { inputs, ... }:
 {
+  # xpra's nixpkgs derivation is Linux-only (xorg-server, pulseaudioFull,
+  # python-uinput, systemd, …). Upstream ships macOS as a separate py2app
+  # bundle; the brew cask wraps it. Install the cask on the host so the
+  # `vm gui` launcher has an `xpra` binary on PATH.
+  flake.darwinModules.private-vm =
+    { ... }:
+    {
+      homebrew.casks = [ "xpra" ];
+    };
+
   flake.homeManagerModules.private-vm =
     {
       pkgs,
@@ -179,8 +189,7 @@
       '';
 
       vmStart = pkgs.writeShellScriptBin "vm-start" ''
-        # Boot the Lima VM and wait for SSH. No RDP tunnel here — that's
-        # vm rdp's job. Idempotent.
+        # Boot the Lima VM and wait for SSH. Idempotent.
         set -euo pipefail
 
         flake_dir="${flakeDir}"
@@ -285,7 +294,7 @@
         # Idempotent provision + rebuild. Always SSHes as `nixos` (the
         # bootstrap user — Lima's ssh.config bakes that in at first start).
         # Pushes:
-        #   - passwd.hash (xrdp PAM)
+        #   - passwd.hash (user password hash, for sudo)
         #   - ${vmUser}.pub (real user's SSH key, for vm ssh)
         # both into /var/lib/private-vm/. Rotation = re-run this with new
         # source files. Then rsyncs etc/ → /home/nixos/etc and runs
@@ -344,68 +353,54 @@
           'sudo nixos-rebuild switch --flake "$HOME/etc#private-vm"'
       '';
 
-      vmRdp = pkgs.writeShellScriptBin "vm-rdp" ''
-        # Ensure VM up + RDP tunnel up + password from Keychain → launch FreeRDP.
-        # First-time setup:
-        #   security add-generic-password -a igor -s private-vm-rdp -w
-        # The xrdp session starts whatever openbox autostarts (Firefox by
-        # default in full.nix).
+      vmGui = pkgs.writeShellScriptBin "vm-gui" ''
+        # Attach an xpra client to the guest's :100 server over SSH. The
+        # guest runs a persistent, headless xpra server as a user systemd
+        # unit (full.nix). Apps launched in the guest with DISPLAY=:100 —
+        # the default in the guest user's session env — render into that
+        # server. This command surfaces those windows on the Mac as native
+        # macOS windows. Closing the windows does not stop the server;
+        # closing this client does not stop the apps.
+        #
+        # No additional ports: xpra speaks its protocol over the SSH
+        # stdio channel via the ssh:// URL scheme. Reuses Lima's SSH
+        # config so authentication is identical to `vm ssh`.
         set -euo pipefail
-
-        "${vmStart}/bin/vm-start"
-        "${vmUnlock}/bin/vm-unlock"
-
         export LIMA_HOME="${limaHome}"
         ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
-        if ! ${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN >/dev/null 2>&1; then
-          ssh -F "$ssh_cfg" -L 3389:127.0.0.1:3389 -N -f lima-private-vm
-          echo "RDP tunnel: 127.0.0.1:3389 -> private-vm:3389" >&2
-        fi
 
-        if ! pw=$(security find-generic-password -a ${vmUser} -s private-vm-rdp -w 2>/dev/null); then
-          echo "No keychain entry. Create one with:" >&2
-          echo "  security add-generic-password -a ${vmUser} -s private-vm-rdp -w" >&2
-          exit 1
-        fi
+        "${vmStart}/bin/vm-start"
 
-        # Prefer sdl-freerdp (SDL backend, native macOS) over xfreerdp (X11,
-        # needs XQuartz). nixpkgs' freerdp 3.x ships both.
-        if command -v sdl-freerdp >/dev/null 2>&1; then
-          rdp=sdl-freerdp
-        elif command -v xfreerdp >/dev/null 2>&1; then
-          rdp=xfreerdp
-        else
-          rdp=""
-        fi
-
-        if [[ -n "$rdp" ]]; then
-          # Note: /p: places the password in argv (visible in `ps`). Fine on a
-          # single-user laptop; harden via askpass if that ever changes.
-          # /sound:sys:mac — CoreAudio backend; /sound:sys:pulse crashes on
-          # macOS because PulseAudio doesn't exist and the disconnect handler
-          # assert-fails when the channel can't initialise.
-          exec "$rdp" /v:127.0.0.1:3389 /u:${vmUser} "/p:$pw" \
-            /dynamic-resolution /size:1600x1000 /scale:140 \
-            /sound:sys:mac +clipboard /cert:ignore
-        else
-          printf '%s' "$pw" | pbcopy
-          echo "No FreeRDP found. Password copied to clipboard." >&2
-          echo "Connect with Windows App to 127.0.0.1:3389 as ${vmUser}." >&2
-        fi
+        # xpra is the brew cask (Linux-only in nixpkgs). Invoke the app
+        # bundle binary directly: the /opt/homebrew/bin/xpra symlink
+        # routes through a launcher script that uses $0's dirname to
+        # locate PythonExecWrapper, which breaks under the symlink.
+        # The cask also installs unsigned-and-quarantined; if Gatekeeper
+        # kills xpra on first run, strip quarantine once:
+        #   xattr -dr com.apple.quarantine /Applications/Xpra.app
+        #
+        # Per-user ControlPath (same pattern as vm-ssh): Lima's
+        # ssh.config has `User nixos` baked in and a shared ControlPath.
+        # With ControlMaster auto + ControlPersist, plain `-l ${vmUser}`
+        # silently multiplexes through the existing nixos channel and
+        # xpra's UDS peercred check fails (uid mismatch). Force a fresh,
+        # ${vmUser}-owned ssh transport.
+        # --encoding=rgb: lossless, CPU-heavy, bandwidth-heavy. Fine here
+        # because transport is loopback to a local Lima VM — bandwidth is
+        # free and the visible win over xpra's adaptive default
+        # (jpeg/h264 backing off under perceived load) is large for
+        # Firefox text/UI. If CPU becomes the bottleneck before GPU
+        # accel lands (Phase 2.5), step down to `png` then `jpeg`.
+        exec /Applications/Xpra.app/Contents/MacOS/Xpra attach \
+          --ssh="ssh -F $ssh_cfg -l ${vmUser} -o ControlPath=$LIMA_HOME/private-vm/ssh-${vmUser}.sock -o ControlMaster=auto -o ControlPersist=600" \
+          --encoding=rgb \
+          "ssh://${vmUser}@lima-private-vm/100"
       '';
 
       vmStop = pkgs.writeShellScriptBin "vm-stop" ''
-        # Stop the VM and tear down any RDP tunnel.
         set -euo pipefail
         export LIMA_HOME="${limaHome}"
-        limactl="${pkgs.lima}/bin/limactl"
-
-        pids=$(${pkgs.lsof}/bin/lsof -iTCP:3389 -sTCP:LISTEN -t 2>/dev/null || true)
-        if [[ -n "$pids" ]]; then
-          kill $pids || true
-        fi
-
-        "$limactl" stop private-vm 2>&1 | tail -3
+        "${pkgs.lima}/bin/limactl" stop private-vm 2>&1 | tail -3
       '';
 
       vmNew = pkgs.writeShellScriptBin "vm-new" ''
@@ -578,7 +573,7 @@
           stop)         exec "${vmStop}/bin/vm-stop" "$@" ;;
           ssh)          exec "${vmSsh}/bin/vm-ssh" "$@" ;;
           rebuild)      exec "${vmRebuild}/bin/vm-rebuild" "$@" ;;
-          rdp)          exec "${vmRdp}/bin/vm-rdp" "$@" ;;
+          gui)          exec "${vmGui}/bin/vm-gui" "$@" ;;
           lock)         exec "${vmLock}/bin/vm-lock" "$@" ;;
           unlock)       exec "${vmUnlock}/bin/vm-unlock" "$@" ;;
           new)          exec "${vmNew}/bin/vm-new" "$@" ;;
@@ -593,7 +588,7 @@
             echo "  build          build the bootstrap qcow image" >&2
             echo "  rebuild        deploy NixOS config to the VM" >&2
             echo "  ssh [args]     open a shell or run a command in the VM" >&2
-            echo "  rdp            launch FreeRDP desktop session" >&2
+            echo "  gui            attach an xpra client (surface guest GUI apps)" >&2
             echo "  lock           unmount and close the encrypted home volume" >&2
             echo "  unlock         open and mount the encrypted home volume" >&2
             echo "  new <name>     create a new VM-backed project" >&2
@@ -609,7 +604,6 @@
       ]
       ++ lib.optionals pkgs.stdenv.isDarwin [
         pkgs.lima
-        pkgs.freerdp
         qemuWrapper
       ];
     };
