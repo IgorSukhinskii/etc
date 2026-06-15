@@ -21,6 +21,10 @@
           EDITOR = "nvim";
           VISUAL = "nvim";
           CARGO_HOME = "${config.xdg.dataHome}/cargo";
+          # Single shared target directory across all cargo projects. Keeps
+          # per-project trees clean and makes target/ a single, easy-to-purge
+          # location instead of a long-tail problem across ~/projects/.
+          CARGO_TARGET_DIR = "${config.xdg.cacheHome}/cargo-target";
           BUN_INSTALL = "${config.xdg.dataHome}/bun";
           NPM_CONFIG_CACHE = "${config.xdg.cacheHome}/npm";
           NPM_CONFIG_PREFIX = "${config.xdg.dataHome}/npm";
