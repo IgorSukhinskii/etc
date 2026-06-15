@@ -99,6 +99,11 @@
         # as the trust anchor for first SSH. That's the only host-specific
         # read; everything else (real pubkey, password hash) is pushed at
         # runtime.
+        #
+        # linux-builder lifecycle: the launchd daemon is configured dormant
+        # (RunAtLoad=false, KeepAlive=false in modules/darwin/nix.nix).
+        # Kickstart it for the build, kill it after — combined with
+        # ephemeral=true this keeps the builder out of RAM/disk at rest.
         set -euo pipefail
 
         export LIMA_HOME="${limaHome}"
@@ -106,7 +111,29 @@
         mkdir -p "$(dirname "$image_link")"
         "${vmEnsureVolumes}"
 
-        exec nix build --impure --out-link "$image_link" "${flakeDir}#private-vm-image" "$@"
+        builder_label=system/org.nixos.linux-builder
+
+        cleanup() {
+          sudo /bin/launchctl kill TERM "$builder_label" 2>/dev/null || true
+        }
+        trap cleanup EXIT
+
+        sudo /bin/launchctl kickstart "$builder_label"
+
+        # Wait for the builder's SSH port. cold start of qemu + nixos boot
+        # is typically 10-30s; cap at 120s.
+        for i in $(seq 1 120); do
+          if ${pkgs.netcat}/bin/nc -z localhost 31022 2>/dev/null; then
+            break
+          fi
+          sleep 1
+        done
+        if ! ${pkgs.netcat}/bin/nc -z localhost 31022 2>/dev/null; then
+          echo "linux-builder did not become reachable on :31022 within 120s" >&2
+          exit 1
+        fi
+
+        nix build --impure --out-link "$image_link" "${flakeDir}#private-vm-image" "$@"
       '';
 
       vmStart = pkgs.writeShellScriptBin "vm-start" ''
