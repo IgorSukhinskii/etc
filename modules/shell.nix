@@ -35,10 +35,6 @@
         };
       };
 
-      programs.starship = {
-        enable = true;
-      };
-
       programs.atuin = {
         enable = true;
       };
@@ -54,6 +50,8 @@
 
       programs.zsh.initContent = ''
         eval "$(nix-your-shell zsh)"
+        # Vi mode -- starship's character.vimcmd_symbol reads $KEYMAP from this.
+        bindkey -v
       '';
 
       programs.fzf = {

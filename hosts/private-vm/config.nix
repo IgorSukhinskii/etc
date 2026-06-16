@@ -35,5 +35,7 @@
       cryptsetup
       e2fsprogs
     ];
+    # Marker read by starship to render the VM glyph in the prompt.
+    environment.variables.IN_PRIVATE_VM = "1";
   };
 }

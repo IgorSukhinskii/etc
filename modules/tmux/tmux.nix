@@ -59,11 +59,13 @@
           vm start
           vm unlock
 
-          tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
-          tmux set-option -t "$name" default-command \
-            "vm ssh -t 'cd $vm_dir && exec \$SHELL'"
-          tmux set-environment -t "$name" PRIVATE_VM "1"
-          tmux set-environment -t "$name" PRIVATE_VM_DIR "$vm_dir"
+          ssh_cmd="vm ssh -t 'cd $vm_dir && exec \$SHELL'"
+          if ! tmux has-session -t "$name" 2>/dev/null; then
+            tmux new-session -ds "$name" -c "$path" \
+              -e PRIVATE_VM=1 -e "PRIVATE_VM_DIR=$vm_dir" \
+              "$ssh_cmd"
+          fi
+          tmux set-option -t "$name" default-command "$ssh_cmd"
         else
           tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name" -c "$path"
         fi
@@ -85,7 +87,8 @@
       #   green  — private-vm session, active pane is in SSH
       #   red    — private-vm session, active pane has dropped out of SSH (warning)
       #   yellow — all other (host) sessions
-      sessionPillColor = "#{?#{E:PRIVATE_VM},#{?#{==:#{pane_current_command},ssh},${green},${red}},${yellow}}";
+      # Treat both `ssh` and the brief `vm` exec wrapper as "in VM" → green.
+      sessionPillColor = "#{?#{E:PRIVATE_VM},#{?#{||:#{==:#{pane_current_command},ssh},#{==:#{pane_current_command},vm}},${green},${red}},${yellow}}";
       # Primitive: left cap + content on `color` bg, then reset to default.
       # Standalone-safe (resets bg after content) and composable (pillRight overrides bg next).
       pillLeft =
@@ -160,6 +163,11 @@
         set -g extended-keys-format csi-u
         set -g focus-events on
         set-hook -g pane-focus-in "refresh-client -S"
+        # New panes briefly show `sh`/`vm` before exec'ing into ssh; re-sample
+        # pane_current_command shortly after creation so the session pill flips
+        # to green without needing a key press.
+        set-hook -g after-split-window "run-shell -b 'sleep 0.4 && tmux refresh-client -S'"
+        set-hook -g after-new-window   "run-shell -b 'sleep 0.4 && tmux refresh-client -S'"
 
         # True color + image passthrough (sixel/kitty for ghostty)
         set -as terminal-features ",xterm-ghostty:RGB:extkeys"
