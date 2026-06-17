@@ -173,7 +173,7 @@ in
             --microphone=no \
             --printing=no \
             --file-transfer=off \
-            --opengl=no
+            --opengl=yes
         '';
         Restart = "on-failure";
         RestartSec = "2s";
@@ -290,13 +290,27 @@ in
     ];
   };
 
+  # Guest-side DRM device via the standard 2D virtio-gpu-pci. The host
+  # qemu wrapper attaches `-device virtio-gpu-pci` (no host GL required).
+  # hardware.graphics.enable brings in mesa which, via the virtio_gpu kernel
+  # module + llvmpipe, provides software EGL on /dev/dri/renderD128. xpra's
+  # `--opengl=yes` uses that EGL path for GL compositing — meaningfully
+  # better compositing quality than --opengl=no, without needing hardware GL.
+  # Hardware GPU (virglrenderer/rutabaga) deferred: virglrenderer requires
+  # epoxy/egl.h absent from nixpkgs libepoxy on Darwin; rutabaga requires
+  # qemu's loadable-module system which nixpkgs disables on Darwin.
+  hardware.graphics.enable = true;
+
   # Guest-side driver for virtio-balloon-pci. Under qemu (Phase 1) the
   # host wrapper attaches the device with free-page-reporting=on, so the
   # guest's virtio_balloon driver proactively reports newly-freed PFNs
   # to qemu. On macOS qemu MADV_FREE_REUSABLE's the reported pages —
   # they stay in qemu's RSS but are marked purgeable (instantly
   # reclaimable under host pressure, no swap I/O).
-  boot.kernelModules = [ "virtio_balloon" ];
+  boot.kernelModules = [
+    "virtio_balloon"
+    "virtio_gpu"
+  ];
 
   # Periodic page-cache drop. FPR only reports pages the *guest*
   # considers free (in the buddy allocator). Page cache pages are

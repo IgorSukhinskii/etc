@@ -34,10 +34,24 @@
       # Lima looks up qemu via $QEMU_SYSTEM_AARCH64 before PATH (see Lima's
       # pkg/driver/qemu/qemu.go Exe()). We point that env var at this wrapper
       # so Lima invokes it exactly as it would the real qemu. On real VM
-      # start we inject -device virtio-balloon-pci,free-page-reporting=on so
-      # the guest's virtio_balloon driver can return freed pages to the host
-      # (FPR -> qemu MADV_DONTNEED). Probe invocations (--version, -accel
-      # help, etc.) don't carry -machine virt, so they pass through unchanged.
+      # start we inject:
+      #   virtio-balloon-pci:  FPR → guest returns freed pages to host
+      #   virtio-gpu-pci:      2D virtio GPU → guest gets a DRM device so
+      #                        Mesa EGL can run via software (llvmpipe), which
+      #                        xpra's --opengl=yes uses for GL compositing.
+      #
+      # Hardware GPU (rutabaga) status (2026-06-17):
+      #   rutabaga_gfx supports Darwin and the nixpkgs override builds cleanly
+      #   (needs install_name_tool postInstall fix for the dylib). But:
+      #   - QEMU 10.x: virtio-gpu-rutabaga crashes in virtio_memory_listener_commit
+      #     (NULL deref during device realize) — upstream QEMU bug.
+      #   - QEMU 11.x: rutabaga device initializes, but HVF fails with an SDK
+      #     assertion in hvf/sysreg.c.inc (HV_SYS_REG_SMCR_EL1 value mismatch).
+      #     rutabaga + TCG works but is too slow to be useful.
+      #   Revisit when nixpkgs ships QEMU ≥ 11 with the HVF assertion fixed.
+      #
+      # Probe invocations (--version, -accel help, etc.) don't carry -machine
+      # virt, so they pass through unchanged.
       realQemu = "${pkgs.qemu}/bin/qemu-system-aarch64";
       qemuWrapperBin = pkgs.writeShellApplication {
         name = "qemu-system-aarch64";
@@ -60,7 +74,8 @@
           fi
 
           exec ${realQemu} "$@" \
-            -device virtio-balloon-pci,free-page-reporting=on
+            -device virtio-balloon-pci,free-page-reporting=on \
+            -device virtio-gpu-pci
         '';
       };
       # Lima resolves firmware (EDK2 edk2-aarch64-code.fd) relative to the
@@ -388,15 +403,18 @@
         # silently multiplexes through the existing nixos channel and
         # xpra's UDS peercred check fails (uid mismatch). Force a fresh,
         # ${vmUser}-owned ssh transport.
-        # --encoding=rgb: lossless, CPU-heavy, bandwidth-heavy. Fine here
-        # because transport is loopback to a local Lima VM — bandwidth is
-        # free and the visible win over xpra's adaptive default
-        # (jpeg/h264 backing off under perceived load) is large for
-        # Firefox text/UI. If CPU becomes the bottleneck before GPU
-        # accel lands (Phase 2.5), step down to `png` then `jpeg`.
+        # --encoding=h264: with the guest GPU (virtio-gpu-gl-pci +
+        # virglrenderer), xpra uses its GL compositing path and can encode
+        # via h264. On a loopback VM h264 is smoother than rgb for scrolling
+        # (fewer full-frame sends) and macOS decodes it in VideoToolbox.
+        # --quality=95: high quality, still visually lossless for UI text.
+        # --speed=100: prioritise frame rate over compression ratio
+        # (bandwidth is free on loopback).
         exec /Applications/Xpra.app/Contents/MacOS/Xpra attach \
           --ssh="ssh -F $ssh_cfg -l ${vmUser} -o ControlPath=$LIMA_HOME/private-vm/ssh-${vmUser}.sock -o ControlMaster=auto -o ControlPersist=600" \
-          --encoding=rgb \
+          --encoding=h264 \
+          --quality=95 \
+          --speed=100 \
           "ssh://${vmUser}@lima-private-vm/100"
       '';
 
