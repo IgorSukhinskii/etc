@@ -1,4 +1,4 @@
-{ ... }:
+{ inputs, ... }:
 {
   flake.darwinModules.zen =
     { ... }:
@@ -6,15 +6,20 @@
       homebrew.casks = [ "zen" ];
     };
 
+  # The external zen-browser home-manager module (provides programs.zen-browser).
+  # Registered here so the `browser` profile pulls it on every host that wants a
+  # browser, instead of being hand-appended per host.
+  flake.homeManagerModules.zen-browser = inputs.zen-browser.homeModules.beta;
+
   flake.homeManagerModules.zen =
     {
-      isDarwin,
       pkgs,
       lib,
       config,
       ...
     }:
     let
+      inherit (pkgs.stdenv) isDarwin;
       mkCssVars =
         prefix: p:
         lib.concatStrings (
@@ -23,13 +28,15 @@
           )
         );
     in
-    lib.optionalAttrs isDarwin {
+    {
 
       programs.zen-browser = {
         enable = true;
-        package = null;
+        # darwin: app comes from the Homebrew cask (flake.darwinModules.zen), so
+        # HM must not also install it. linux: no Homebrew, so pull the flake pkg.
+        package = if isDarwin then null else inputs.zen-browser.packages.${pkgs.system}.default;
 
-        darwinDefaultsId = lib.mkIf pkgs.stdenv.isDarwin "app.zen-browser.zen";
+        darwinDefaultsId = lib.mkIf isDarwin "app.zen-browser.zen";
 
         policies =
           let
@@ -115,7 +122,6 @@
 
         profiles.default = {
           path = "default";
-          settings."toolkit.legacyUserProfileCustomizations.stylesheets" = true;
           userChrome = ''
             /* Palette variables — light by default, dark under prefers-color-scheme */
             :root {
@@ -220,6 +226,8 @@
 
           # user.js — applied unconditionally on startup (user-level, not locked)
           settings = {
+            "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
+
             # Modern Fingerprinting Protection — does NOT force light mode
             "privacy.fingerprintingProtection" = true;
             # All FPP protections EXCEPT CSS color-scheme spoofing (preserves dark mode)
@@ -228,10 +236,8 @@
             "privacy.spoof_english" = 2;
 
             # Zen-specific preferences (not policy targets, must be in user.js)
-            # Follow macOS system appearance (0=light, 1=dark, -1=system)
+            # Follow system appearance (0=light, 1=dark, -1=system)
             "browser.theme.toolbar-theme" = -1;
-
-            "widget.macos.sidebar-blend-mode.behind-window" = false;
 
             "zen.workspaces.continue-where-left-off" = true;
             "zen.view.compact.animate-sidebar" = false;
@@ -241,6 +247,9 @@
             "zen.view.compact.toolbar-flash-popup" = false;
             "zen.welcome-screen.seen" = true;
             "zen.urlbar.show-domain-only-in-sidebar" = false;
+          }
+          // lib.optionalAttrs isDarwin {
+            "widget.macos.sidebar-blend-mode.behind-window" = false;
             "full-screen-api.macos-native-full-screen" = false;
           };
 

@@ -51,7 +51,7 @@
 
       sourceFiles = builtins.filter (f: !builtins.elem f excluded) (allFiles hsDir "");
     in
-    lib.mkIf pkgs.stdenv.isDarwin {
+    {
       home.file =
         lib.listToAttrs (
           map (relPath: {

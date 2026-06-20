@@ -255,7 +255,7 @@
       };
 
     in
-    lib.mkIf pkgs.stdenv.isDarwin {
+    {
       programs.sketchybar = {
         enable = true;
         extraPackages = [

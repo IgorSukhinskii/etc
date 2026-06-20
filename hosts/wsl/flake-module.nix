@@ -8,18 +8,14 @@
       ../../nixos/nix.nix
       ../../nixos/users.nix
       inputs.home-manager.nixosModules.home-manager
-      {
-        home-manager.backupFileExtension = "hm-backup";
-        home-manager.useGlobalPkgs = true;
-        home-manager.useUserPackages = true;
-        home-manager.extraSpecialArgs = {
-          isDarwin = false;
-        };
-        home-manager.sharedModules = (builtins.attrValues inputs.self.homeManagerModules) ++ [
-          inputs.nvf.homeManagerModules.default
-          # zen-browser intentionally omitted (headless)
+      (inputs.self.lib.mkHmModule {
+        profiles = [
+          "base"
+          "ai"
         ];
-      }
+        # WSL-singular terminal (writes wezterm.lua to the Windows side).
+        extra = [ ./wezterm.nix ];
+      })
     ];
     specialArgs = { inherit inputs; };
   };

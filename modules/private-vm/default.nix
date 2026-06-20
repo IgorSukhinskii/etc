@@ -14,7 +14,11 @@
       homebrew.casks = [ "xpra" ];
     };
 
-  flake.homeManagerModules.private-vm =
+  # The `vm` launcher is the mac-side control plane for the Lima guest (it drives
+  # limactl/qemu and surfaces guest GUI apps via xpra). It is NOT a guest concern
+  # and must not load on every host, so it lives off the homeManagerModules
+  # registry and is appended host-locally to mac's sharedModules.
+  flake.lib.privateVmHm =
     {
       pkgs,
       lib,

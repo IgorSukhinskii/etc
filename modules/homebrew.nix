@@ -25,7 +25,6 @@
 
   flake.homeManagerModules.homebrew =
     {
-      isDarwin,
       config,
       pkgs,
       lib,
@@ -39,7 +38,7 @@
         /opt/homebrew/bin/brew cleanup
       '';
     in
-    lib.optionalAttrs isDarwin {
+    {
       launchd.agents.brew-cask-update = {
         enable = true;
         config = {

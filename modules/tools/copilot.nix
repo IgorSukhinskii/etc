@@ -14,7 +14,7 @@
         /opt/homebrew/bin/copilot "$@"
       '';
     in
-    lib.mkIf pkgs.stdenv.isDarwin {
+    {
       home.packages = [ copilotWrapper ];
     };
 }

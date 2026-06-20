@@ -22,7 +22,7 @@
       # The activation script below bootstraps it with the JetBrains fallback.
       iosevkaConf = "${config.xdg.configHome}/ghostty/iosevka.conf";
     in
-    lib.mkIf pkgs.stdenv.isDarwin {
+    {
       # Create iosevka.conf with a sane default if it doesn't exist yet.
       # The build script (~/etc/iosevka/build.sh) overwrites it on each build.
       home.activation.bootstrapIosevkaFont = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
