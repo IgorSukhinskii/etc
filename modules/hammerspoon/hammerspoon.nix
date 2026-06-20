@@ -26,10 +26,23 @@
       luaPalette =
         colors: lib.concatStringsSep ", " (lib.mapAttrsToList (name: hex: ''${name} = "#${hex}"'') colors);
 
-      hsDir = ./.;
+      # Import only the Hammerspoon config files into the store, excluding this
+      # module file and editor artefacts. Without the filter, `${hsDir}/...`
+      # would coerce the whole directory (including hammerspoon.nix) into a
+      # single store path, so editing this file would rehash every linked config
+      # source even though their contents are unchanged.
+      excludedNames = [
+        "hammerspoon.nix"
+        ".luarc.json"
+      ];
+
+      hsDir = builtins.path {
+        path = ./.;
+        name = "hammerspoon-config";
+        filter = path: _type: !builtins.elem (baseNameOf path) excludedNames;
+      };
 
       # Recursively collect all regular files under `dir` as paths relative to `base`.
-      # Excludes `hammerspoon.nix` and `.luarc.json` (Nix/editor artefacts, not HS config).
       allFiles =
         dir: prefix:
         lib.concatLists (
@@ -44,12 +57,7 @@
           ) (builtins.readDir dir)
         );
 
-      excluded = [
-        "hammerspoon.nix"
-        ".luarc.json"
-      ];
-
-      sourceFiles = builtins.filter (f: !builtins.elem f excluded) (allFiles hsDir "");
+      sourceFiles = allFiles hsDir "";
     in
     {
       home.file =
