@@ -33,8 +33,19 @@
       programs.zen-browser = {
         enable = true;
         # darwin: app comes from the Homebrew cask (flake.darwinModules.zen), so
-        # HM must not also install it. linux: no Homebrew, so pull the flake pkg.
-        package = if isDarwin then null else inputs.zen-browser.packages.${pkgs.system}.default;
+        # HM must not also install it -> null.
+        #
+        # linux: leave `package` UNSET so the zen-browser HM module builds its own
+        # default. That default does `${name}-unwrapped.override { policies = … }`,
+        # which bakes our `policies` (ExtensionSettings etc.) into the *unwrapped*
+        # tree's distribution/policies.json. This matters because Gecko resolves
+        # its GRE via /proc/self/exe into the unwrapped store path, so policies
+        # MUST live there. Previously we forced `inputs…default` here, whose
+        # unwrapped tree ships empty `{"policies":{}}` — Gecko read that, the
+        # Enterprise Policies service stayed *inactive* (about:policies), and
+        # force_installed extensions + locked prefs never applied. See
+        # hosts/private-vm/WAYLAND-GUI.md §7.
+        package = lib.mkIf isDarwin null;
 
         darwinDefaultsId = lib.mkIf isDarwin "app.zen-browser.zen";
 
