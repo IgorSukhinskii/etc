@@ -474,7 +474,12 @@
           # removed, the socket reappearing means the NEW compositor is bound
           # and listening.
           rm -f "$sock" 2>/dev/null || true
-          nohup "$cocoa_way" >/tmp/cocoa-way.log 2>&1 &
+          # COCOA_WAY_DECORATIONS=0 → undecorated host windows (no macOS titlebar
+          # / traffic lights), so only the guest content shows. cocoa-way is
+          # long-lived and reused, so this applies to every window it composites.
+          # Override by exporting COCOA_WAY_DECORATIONS=1 before `vm gui`.
+          COCOA_WAY_DECORATIONS="''${COCOA_WAY_DECORATIONS:-0}" \
+            nohup "$cocoa_way" >/tmp/cocoa-way.log 2>&1 &
         fi
 
         for _ in $(seq 1 40); do
@@ -518,7 +523,14 @@
           rm -f "$ctl" 2>/dev/null || true
         fi
 
-        exec "$waypipe" --compress=zstd ssh \
+        # Launch the app over waypipe, then RETURN to the shell instead of
+        # blocking in the foreground. The foreground `waypipe ssh` client is not
+        # load-bearing: ssh's ControlPersist master keeps the connection alive, so
+        # Ctrl-C'ing it left zen + cocoa-way running anyway (just with a wedged
+        # terminal). Detaching is strictly more ergonomic. Close the window from
+        # the host (Cmd-W / window shortcut) or run `vm gui-reset` to tear down.
+        log="/tmp/vm-gui-''${app[0]##*/}.log"
+        nohup "$waypipe" --compress=zstd ssh \
           -F "$ssh_cfg" -l ${vmUser} \
           -o ControlPath="$LIMA_HOME/private-vm/ssh-${vmUser}.sock" \
           -o ControlMaster=auto \
@@ -529,7 +541,9 @@
             PATH="/etc/profiles/per-user/${vmUser}/bin:/home/${vmUser}/.nix-profile/bin:/run/current-system/sw/bin:/usr/bin:/bin" \
             MOZ_ENABLE_WAYLAND=1 \
             NIXOS_OZONE_WL=1 \
-            "''${app[@]}"
+            "''${app[@]}" >"$log" 2>&1 </dev/null &
+        disown
+        echo "launched ''${app[*]} (waypipe pid $!); logs: $log" >&2
       '';
 
       vmGuiReset = pkgs.writeShellScriptBin "vm-gui-reset" ''

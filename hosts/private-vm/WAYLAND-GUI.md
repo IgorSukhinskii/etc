@@ -56,6 +56,19 @@ left sidebar. The local build now crops the root toplevel buffer to the xdg
 window geometry and draws the cropped pixels at the tile origin, keeping pixels
 and pointer coordinates aligned.
 
+**The popup scaling fix (2026-06-24):** the toplevel render path honours
+`wp_viewporter`'s destination size (`viewport_dst.w * scale`), but the popup
+render path in `main.rs` did **not** — it always used
+`tex_w / buffer_scale * scale`. Gecko/zen scales via
+`wp_fractional_scale_manager_v1` + `wp_viewporter` (both advertised by cocoa-way),
+keeping `buffer_scale = 1` and putting the real logical size in the viewport
+destination. So a popup (e.g. zen's extensions/settings panel) was drawn at
+`full_physical_buffer_px × scale` ≈ **2× oversized** on Retina while the toplevel
+was correct. Fix: the popup loop now reads `ViewportCachedState.dst` and prefers
+it exactly like the toplevel path. Built at
+`~/.cache/cargo-target/release/cocoa-way`; `vm gui` already prefers that local
+build.
+
 **Known remaining browser gap:** Chromium/Ozone is still not correct after the
 Zen fixes. It renders, but content does not conform to the Cocoa-Way window, a
 small background/root surface appears behind the main one, and pointer
@@ -386,6 +399,33 @@ rendered") — buffers don't land as a live NewBuffer.* Tested guest waypipe
 
 ## 7. Loose ends
 
+### 7a-bis. zen extensions / policies not applying (2026-06-24, root-caused + fixed)
+After zen rendered, the user's **extensions never installed and locked prefs
+never applied**, while profile-level config (userChrome, user.js, search) DID
+land. `about:policies` (captured headlessly via
+`zen-beta --headless --screenshot about:policies`) said: **"The Enterprise
+Policies service is inactive."**
+
+Root cause: the zen package on PATH (`…r065…-zen-beta`) ships the populated
+`distribution/policies.json` (with `ExtensionSettings`, locked `Preferences`,
+etc.) **only in its *wrapped* tree**. Its launcher execs the **unwrapped** binary
+(`…-zen-beta-bin-unwrapped/lib/zen-bin-*/zen`), and Gecko resolves its GRE via
+`/proc/self/exe` into that unwrapped store path — whose
+`distribution/policies.json` is **`{"policies":{}}`**. So Gecko reads the empty
+one; policies never activate (no force_installed extensions, no locked prefs).
+
+The zen-browser flake DOES bake policies into the *unwrapped* tree
+(`package.nix:111-112`, `${name}-unwrapped.override { policies = … }`) when the
+package is built via the HM module's own default. But `modules/zen.nix` was
+overriding `programs.zen-browser.package` with the stock
+`inputs.zen-browser.packages.${system}.default`, whose unwrapped tree carries no
+user policies. **Fix (committed): on Linux leave `package` unset
+(`lib.mkIf isDarwin null`)** so the HM module builds its policy-baked default.
+Verify after `vm rebuild`: `about:policies` → Active, and `force_installed`
+uBlock/tridactyl appear (AMO is reachable from the guest — confirmed HTTP 302 to
+the signed XPI). Note this build stores its profile at `~/.config/zen/`
+(XDG), **not** `~/.zen/`.
+
 ### 7a. Post-offset-fix findings (2026-06-24) — what works, what doesn't
 After the offset fix, **`foot` renders correctly through the full `vm gui`
 pipeline** (the transport+render path is proven good). Three *separate* issues
@@ -433,13 +473,54 @@ remain, none of them the offset bug:
   waypipe+sockets) — use it when wedged. The half-dead-master edge case may still
   slip past `-O check`; `vm gui-reset` is the catch-all.
 
+### 7a-ter. Polish round (2026-06-25) — fixed / addressed
+After zen worked end-to-end, a batch of UX issues. Fixed:
+- **Second window rendered oversized until a resize.** `new_toplevel`
+  (cocoa-way `state.rs`) sent a *full-window*-sized configure AFTER
+  `add_tile`→`relayout` had already configured the new tile with its (half)
+  tile size — the full-size configure won, so a tiled window rendered full-width
+  into a half tile until the next resize forced a relayout. Fix: `new_toplevel`
+  no longer sends a size; it sets Activated + fractional scale, then lets the
+  layout's `request_size` own the size in a single configure.
+- **New window didn't get keyboard focus (needed a click).** `new_toplevel` now
+  calls `keyboard.set_focus(self, Some(surface), serial)` so a freshly created
+  toplevel (e.g. Ctrl+Shift+P private window) is typable immediately.
+- **`vm gui` blocked the terminal but didn't control the app.** The foreground
+  `waypipe ssh` was never load-bearing (ssh ControlPersist master keeps the
+  window alive; Ctrl-C left zen+cocoa-way running). `vmGui` now backgrounds it
+  (`nohup … & disown`, logs to `/tmp/vm-gui-<app>.log`) and returns immediately.
+  Supersedes the "post-quit hang" item below.
+- **Decorations off (criterion #5).** cocoa-way `main.rs` honours
+  `COCOA_WAY_DECORATIONS=0/false/off` → `WindowBuilder::with_decorations(false)`
+  (no macOS titlebar / traffic lights; manage via host window shortcuts).
+  `vmGui` sets `COCOA_WAY_DECORATIONS=0` on the (long-lived, reused) cocoa-way
+  launch — so it only takes effect after cocoa-way is **restarted**
+  (`vm gui-reset`). Upstream default stays decorated.
+- **Browser was light despite "follow system".** No XDG portal in the guest, so
+  Gecko falls back to GtkSettings (default `gtk-application-prefer-dark-theme`
+  = false → light). `hosts/private-vm/full.nix` now writes
+  `~/.config/gtk-{3,4}.0/settings.ini` with that hint = true (no gtk HM module
+  → no dconf/dbus). Needs `vm rebuild`.
+
+**To activate this round:** `nix-rebuild` (host: vmGui detach + decorations env —
+done) · `vm rebuild` (guest: dark mode) · `vm gui-reset` then relaunch (restart
+cocoa-way to pick up the new binary + decorations env; closes open windows).
+
+### 7c. Still open (deferred)
+- **One macOS NSWindow per guest toplevel (criterion #3).** cocoa-way is a
+  single-window *tiling* compositor (`layout.rs`): extra toplevels tile inside one
+  NSWindow rather than spawning a new native window. Making each toplevel its own
+  NSWindow is a real architectural change (per-window winit window + renderer +
+  seat focus routing). Acknowledged "may have to live with it." The initial-size
+  + focus fixes above make the tiled case behave; true multi-window is a separate
+  effort.
+- **Host window title follows the guest toplevel title.** cocoa-way hardcodes
+  "Cocoa-Way". Plumbing `xdg_toplevel.set_title` → `NSWindow.set_title` is small,
+  but ambiguous under tiling (N toplevels, 1 window) — would track the focused
+  tile. Lower value once decorations are off (no visible title); still shows in
+  the macOS app switcher / Mission Control. Deferred.
+
 ### 7b. Pre-existing
-- **Decorations (criterion #5):** cocoa-way draws server-side titlebars; no
-  documented off-switch. `zxdg_decoration_manager_v1` is advertised, so SSD-off
-  may be reachable.
-- **`vm gui` post-quit hang:** waypipe/ssh ControlPersist lingers after the app
-  exits; Ctrl-C for now. (Same ControlPersist master as the stale-state issue
-  above — fixing one helps the other.)
 - **Audio:** waypipe carries none. pipewire kept in the guest as the future
   capture point (forward `auto_null.monitor` to a host PulseAudio over SSH).
 

@@ -112,6 +112,22 @@ in
     # (The Wayland backend env vars live at system level in
     # environment.sessionVariables above.)
 
+    # Guest appearance = dark. zen/firefox follow the system color-scheme, but
+    # this guest has no XDG desktop portal (no DE), so Gecko falls back to
+    # GtkSettings — whose default `gtk-application-prefer-dark-theme` is false, so
+    # the browser renders light. Write the dark hint straight to GTK's
+    # settings.ini (no gtk HM module → no dconf/dbus needed on this headless
+    # guest). This is the guest's system appearance, not a zen-derivation or
+    # profile hardcode.
+    xdg.configFile."gtk-3.0/settings.ini".text = ''
+      [Settings]
+      gtk-application-prefer-dark-theme=true
+    '';
+    xdg.configFile."gtk-4.0/settings.ini".text = ''
+      [Settings]
+      gtk-application-prefer-dark-theme=true
+    '';
+
     programs.zsh.initContent = ''
       _cursor_shape() {
         case ''${KEYMAP-} in
