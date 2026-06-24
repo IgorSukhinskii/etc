@@ -421,15 +421,37 @@
           app=( firefox )
         fi
 
+        # Gecko's Wayland proxy self-check needs waypipe's guest display socket
+        # to outlive browser startup. Zen's default profile handoff can return
+        # from the process waypipe is tracking while child processes continue,
+        # which makes waypipe clean up that socket before the proxy checks it.
+        # Launch the managed profile directly so the tracked parent stays alive.
+        case "''${app[0]}" in
+          zen|zen-beta)
+            has_profile=0
+            for arg in "''${app[@]:1}"; do
+              case "$arg" in
+                --profile|-profile|-P) has_profile=1 ;;
+              esac
+            done
+            if [[ "$has_profile" -eq 0 ]]; then
+              app+=( --no-remote --new-instance --profile "/home/${vmUser}/.config/zen/default" )
+            fi
+            ssh -F "$ssh_cfg" -l ${vmUser} -o ControlPath=none -o ConnectTimeout=8 lima-private-vm \
+              'if ! pgrep -u "$(id -u)" -f "([.]zen-beta-wrapped|/[z]en-bin-.*/zen)" >/dev/null 2>&1; then rm -f "$HOME/.config/zen/default/.parentlock"; fi' \
+              >/dev/null 2>&1 || true
+            ;;
+        esac
+
         # INTERIM (see hosts/private-vm/WAYLAND-GUI.md §0/§8): brew cocoa-way
-        # 1.0.0 has the wl_shm buffer-offset bug (every window renders black).
-        # The fix lives in the source clone at ~/projects/cocoa-way; default to
-        # that locally-built binary, fall back to brew if it isn't built yet.
+        # lacks the wl_shm offset fix and Gecko ARGB-alpha fix. The fixes live
+        # in the source clone at ~/projects/cocoa-way; default to that
+        # locally-built binary, fall back to brew if it isn't built yet.
         # Override with COCOA_WAY_BIN=/path. Replace this with a nix-from-source
         # package once that lands (then drop the fallback).
         cocoa_way="''${COCOA_WAY_BIN:-''${CARGO_TARGET_DIR:-$HOME/.cache/cargo-target}/release/cocoa-way}"
         if [[ ! -x "$cocoa_way" ]]; then
-          echo "note: patched cocoa-way not found at $cocoa_way; falling back to brew (buggy: black windows). Build it: (cd ~/projects/cocoa-way && nix develop --command cargo build --release)" >&2
+          echo "note: patched cocoa-way not found at $cocoa_way; falling back to brew (buggy: black windows, especially Gecko). Build it: (cd ~/projects/cocoa-way && nix develop --command cargo build --release)" >&2
           cocoa_way=/opt/homebrew/bin/cocoa-way
         fi
         waypipe=/opt/homebrew/bin/waypipe
@@ -533,9 +555,9 @@
 
         # Guest reap via a fresh non-multiplexed connection. The guest login
         # shell is zsh (errors on a non-matching glob), so use find -delete.
-        echo "guest: reaping stale waypipe + wayland sockets…" >&2
+        echo "guest: reaping stale waypipe/browser procs + wayland sockets…" >&2
         ssh -F "$ssh_cfg" -l ${vmUser} -o ControlPath=none -o ConnectTimeout=8 lima-private-vm \
-          'pkill -9 waypipe 2>/dev/null; find "/run/user/$(id -u)" -maxdepth 1 -name "wayland-*" -delete 2>/dev/null; echo guest-reaped' \
+          'pkill -9 waypipe 2>/dev/null; pkill -9 -f "([.]zen-beta-wrapped|/[z]en-bin-.*/zen|[.]firefox-wrapped|/[f]irefox-bin)" 2>/dev/null; find "/run/user/$(id -u)" -maxdepth 1 -name "wayland-*" -delete 2>/dev/null; rm -f "$HOME/.config/zen/default/.parentlock"; echo guest-reaped' \
           2>&1 | tail -1 || true
         echo "done — rerun: vm gui <app>" >&2
       '';

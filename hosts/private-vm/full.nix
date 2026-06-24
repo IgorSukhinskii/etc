@@ -66,14 +66,10 @@ in
     # compositor from the app's POV) and ships surfaces to cocoa-way on the Mac.
     # No guest compositor/Xserver is needed.
     #
-    # NOTE (2026-06-24): the GUI path is BLOCKED on a waypipe-darwin transport
-    # bug, NOT a cocoa-way renderer bug. Proven: a native macOS wl_shm client
-    # talking directly to cocoa-way (no waypipe) renders fine; every
-    # waypipe-darwin-forwarded client is black — cocoa-way logs "tiles present
-    # but nothing rendered" and never reaches get_buffer_pixels. So buffers
-    # committed through waypipe-darwin don't land as a live NewBuffer in
-    # cocoa-way's commit state. Wiring is left in place (it is correct); the
-    # investigation + repro live in hosts/private-vm/WAYLAND-GUI.md.
+    # NOTE (2026-06-24): the GUI path is not blocked on waypipe-darwin. The
+    # black-window bugs were cocoa-way-side: wl_shm buffer offsets, then Gecko's
+    # transparent ARGB wrapper surface being forced opaque. The investigation +
+    # repro live in hosts/private-vm/WAYLAND-GUI.md.
     waypipe
     # Wayland bring-up/debug tools (remove once the stack is proven). `foot`
     # (minimal pure-SHM terminal) and `wayland-info` (wayland-utils) are the

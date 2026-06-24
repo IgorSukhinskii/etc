@@ -1,12 +1,45 @@
 # private-vm GUI — browser bring-up handoff (fresh-session deliverable)
 
-Status: **the transport/black bug is FIXED** (see `WAYLAND-GUI.md` §0 — cocoa-way
-wl_shm buffer-offset bug; `foot` renders end-to-end). This doc is the
-self-contained plan to get a **guest browser (target: `zen-beta`)** rendering on
-the host. Written for a fresh session — assume no prior context beyond this file
-and `WAYLAND-GUI.md`.
+Status: **Zen/Gecko now renders through waypipe** with the locally built
+`~/projects/cocoa-way` binary. Two cocoa-way fixes are required: wl_shm buffer
+offset handling (all apps) and ARGB alpha/blending (Gecko's transparent wrapper
+surface). The VM wrapper also keeps Gecko under waypipe with `--no-remote
+--new-instance --profile`.
 
 Date: 2026-06-24. Host: Apple M4 Pro, macOS 26.5.1 (25F80).
+
+## 0. 2026-06-24 update — Gecko renders
+Root causes found:
+- Zen's normal/default profile launch could return from the process that waypipe
+  tracks while Gecko child processes continued. waypipe then cleaned up its
+  guest `WAYLAND_DISPLAY` socket; Gecko's Wayland proxy later ran
+  `CheckWaylandDisplay()` and failed with `No such file or directory`.
+- After that was fixed, Gecko still looked black because cocoa-way forced every
+  ARGB8888 wl_shm buffer opaque and used a non-blending Metal blit pipeline.
+  Gecko commits a larger transparent ARGB shell/decor surface after its actual
+  1600x1200 content surface; forcing alpha made that transparent surface an
+  opaque black cover.
+
+Fix in `modules/private-vm/default.nix`:
+- `vm gui zen` / `vm gui zen-beta` now add
+  `--no-remote --new-instance --profile /home/igor/.config/zen/default` when no
+  explicit profile is supplied.
+- `vm gui-reset` now also reaps orphaned Zen/Firefox processes and removes the
+  stale Zen `.parentlock`.
+
+Fix in `~/projects/cocoa-way`:
+- `src/render.rs` now forces alpha only for XRGB8888; ARGB8888 preserves client
+  alpha.
+- `src/metal_renderer.rs` enables blending for the texture blit pipeline.
+
+Validation:
+- waypipe stayed alive after 22s;
+- cocoa-way saw 4 clients, 1 XDG toplevel, and steady ARGB8888 wl_shm buffers;
+- no `Wayland Proxy` / `we don't have any display` error appeared.
+- instrumentation showed the Gecko content surface has non-black opaque pixels
+  and the larger wrapper surface is transparent once ARGB alpha is preserved.
+- the corrected `vm gui-reset` leaves no guest browser/waypipe processes,
+  `wayland-*` sockets, or Zen `.parentlock`.
 
 ---
 
@@ -23,28 +56,15 @@ Date: 2026-06-24. Host: Apple M4 Pro, macOS 26.5.1 (25F80).
   health-checks the ssh control master and resets it if stale.
 - **`foot` renders correctly** through `vm gui foot`. Pipeline is proven good.
 
-## 2. The browser problem (what to fix)
-`vm gui firefox` / `vm gui zen-beta` do **not** show content. Two layered
-symptoms observed:
-- **Primary (reproduced, consistent): Gecko Wayland Proxy fails before any
-  window.** Firefox/zen connect to cocoa-way through waypipe (cocoa-way logs ~4
-  "New client connected" — Gecko is multiprocess) but create **0 xdg_toplevels /
-  0 buffers**, then exit with:
-  ```
-  [NNN] Wayland Proxy [0x..] Error: CheckWaylandDisplay(): Failed to connect to
-        Wayland display '/run/user/1001/wayland-<random>' : No such file or directory
-  Error: we don't have any display, WAYLAND_DISPLAY='wayland-<random>' DISPLAY='(null)'
-  ```
-  The `wayland-<random>` is Gecko's *own* proxy socket, which never gets created.
-  `MOZ_DISABLE_WAYLAND_PROXY=1` did **not** suppress it in testing. Errors vary
-  run-to-run (sometimes `no DISPLAY`) → there's also an env/timing component.
-- **Secondary (seen earlier, not currently reproducible): black window.** On a
-  run where the proxy DID come up, the window rendered black — likely dmabuf/EGL
-  (cocoa-way has **no** `zwp_linux_dmabuf`, only wl_shm) or scaling. Chase only
-  after the proxy issue is resolved.
-
-This is a **client-toolkit problem layered on a working pipeline**, NOT a
-cocoa-way render bug.
+## 2. Browser status
+`vm gui zen-beta` is expected to render when the local fixed cocoa-way binary has
+been built at `${CARGO_TARGET_DIR:-~/.cache/cargo-target}/release/cocoa-way`.
+If it regresses:
+- `Wayland Proxy` / `we don't have any display` means the waypipe-tracked Gecko
+  process exited early; check the `--no-remote --new-instance --profile` wrapper
+  path and stale profile locks.
+- A black window with steady `get_buffer_pixels: Argb8888` logs means cocoa-way
+  is not the fixed build, or the ARGB alpha/blending patch regressed.
 
 ## 3. Test matrix (engine/toolkit coverage)
 _(harness `/tmp/gui-matrix.sh`; logs `/tmp/mx-cw-*.log`, `/tmp/mx-app-*.log`. Run 2026-06-24.)_

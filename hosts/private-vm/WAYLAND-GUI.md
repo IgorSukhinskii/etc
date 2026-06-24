@@ -1,12 +1,12 @@
 # private-vm GUI — cocoa-way + waypipe (Wayland), handover
 
 Status: **ROOT-CAUSED & FIXED (2026-06-24).** It was **NOT** a waypipe-darwin
-transport bug — it is a one-line bug in **cocoa-way**: its wl_shm reader ignored
-the buffer's offset within the pool. The fix is implemented and verified in the
-source clone at `~/projects/cocoa-way`. Remaining work is only *delivery* (get
-the fixed cocoa-way in front of `vm gui` — see §8). See §3 for the corrected
-diagnosis; the original "transport bug" reasoning below it is preserved but was
-**wrong**.
+transport bug. The general black-window bug was cocoa-way reading wl_shm buffers
+from the pool base instead of `BufferData.offset`; Gecko also needed cocoa-way to
+preserve ARGB alpha and use a blending blit pipeline. Both fixes are implemented
+and verified in the source clone at `~/projects/cocoa-way`. See §3 for the
+corrected diagnosis; the original "transport bug" reasoning below it is
+preserved but was **wrong**.
 
 Date of handover: 2026-06-24. Host: Apple **M4 Pro**, **macOS 26.5.1 (25F80)**.
 
@@ -30,10 +30,16 @@ as a live `NewBuffer`, `get_buffer_pixels` WAS called, and it read all-zero
 content — which looks like "the transport delivered an empty buffer". It didn't;
 cocoa-way was reading the wrong slice of a correctly-delivered pool.
 
-**The fix** (in `~/projects/cocoa-way/src/render.rs`, inside `get_buffer_pixels`):
+**The first fix** (in `~/projects/cocoa-way/src/render.rs`, inside
+`get_buffer_pixels`):
 apply `data.offset` before building the pixel slice —
 `from_raw_parts(ptr.add(offset), len - offset)` (with an `offset >= len` guard).
 One self-contained change; popups benefit too since they share the same reader.
+
+**The Gecko fix:** preserve alpha for ARGB8888 buffers, force alpha only for
+XRGB8888, and enable blending for cocoa-way's Metal texture blit pipeline.
+Without this, Gecko's transparent shell/decor surface is drawn as an opaque black
+surface over the actual browser content.
 
 **Verified** (instrumentation since reverted; clean diff is just the fix):
 | Scenario | Before fix | After fix |
@@ -420,10 +426,9 @@ remain, none of them the offset bug:
 ## 8. DELIVERY — getting the fixed cocoa-way in front of `vm gui`
 
 The fix lives in the source clone (`~/projects/cocoa-way`), built at
-`~/.cache/cargo-target/release/cocoa-way`. But `vm gui`
-(`modules/private-vm/default.nix` → `vmGui`) launches the **Homebrew** cocoa-way
-(`/opt/homebrew/bin/cocoa-way`, formula `1.0.0`), which still has the bug. Until
-that's resolved, `vm gui` is still black even though the fix exists. Options:
+`~/.cache/cargo-target/release/cocoa-way`. `vm gui`
+(`modules/private-vm/default.nix` → `vmGui`) now prefers that local build, then
+falls back to Homebrew with a warning. Durable options:
 
 1. **Upstream it (preferred, but outward-facing — needs a decision).** PR the
    offset fix to `J-x-Z/cocoa-way`, then `brew upgrade cocoa-way`. Clean diff is
