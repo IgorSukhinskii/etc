@@ -251,6 +251,19 @@
           // lib.optionalAttrs isDarwin {
             "widget.macos.sidebar-blend-mode.behind-window" = false;
             "full-screen-api.macos-native-full-screen" = false;
+          }
+          // lib.optionalAttrs (!isDarwin) {
+            # Linux here means the private-vm Lima guest, surfaced on the Mac via
+            # cocoa-way + waypipe (`vm gui zen`). The guest has no real GPU
+            # (software llvmpipe only) and cocoa-way advertises NO
+            # zwp_linux_dmabuf — it accepts only wl_shm XRGB8888/ARGB8888. Force
+            # software WebRender so zen renders into wl_shm buffers (not GPU
+            # dmabuf) and disable VA-API so video doesn't take the dmabuf path.
+            # This is correct regardless of the current black-screen blocker,
+            # which is a separate waypipe-darwin transport bug — see
+            # hosts/private-vm/WAYLAND-GUI.md.
+            "gfx.webrender.software" = true;
+            "media.ffmpeg.vaapi.enabled" = false;
           };
 
           search = {

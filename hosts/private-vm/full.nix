@@ -9,7 +9,7 @@ in
 {
   # In-VM steady-state config. Layered on bootstrap.nix; applied by
   # private-vm-rebuild. Creates the real user (host.username) under whom
-  # interactive sessions (vm ssh, xpra-forwarded GUI apps) run. The
+  # interactive sessions (vm ssh, waypipe-forwarded GUI apps) run. The
   # bootstrap `nixos` user persists from bootstrap.nix and remains the
   # host-side ops account.
   networking.hostName = "private-vm";
@@ -17,7 +17,7 @@ in
     192.168.5.2 host.private
   '';
 
-  # The user-facing user — SSH (for terminal/tmux work) + xpra (for GUI).
+  # The user-facing user — SSH (for terminal/tmux work) + waypipe (for GUI).
   # nixos is still the host→VM bootstrap account used by private-vm-rebuild
   # (Lima's ssh.config bakes User=nixos at first start), but everyday work
   # — `vm ssh`, in-VM tmux, etc. — happens as this user.
@@ -57,22 +57,48 @@ in
   ];
 
   environment.systemPackages = with pkgs; [
+    # firefox: bring-up/debug browser. The real browser is zen, installed via
+    # the `browser` HM profile (hosts/private-vm/flake-module.nix). Remove once
+    # zen is proven over the waypipe path.
     firefox
-    xpra
+    # waypipe: the guest-side transport. `vm gui` runs `waypipe server -- <app>`
+    # over SSH; waypipe presents a Wayland socket to the app (it acts as the
+    # compositor from the app's POV) and ships surfaces to cocoa-way on the Mac.
+    # No guest compositor/Xserver is needed.
+    #
+    # NOTE (2026-06-24): the GUI path is BLOCKED on a waypipe-darwin transport
+    # bug, NOT a cocoa-way renderer bug. Proven: a native macOS wl_shm client
+    # talking directly to cocoa-way (no waypipe) renders fine; every
+    # waypipe-darwin-forwarded client is black — cocoa-way logs "tiles present
+    # but nothing rendered" and never reaches get_buffer_pixels. So buffers
+    # committed through waypipe-darwin don't land as a live NewBuffer in
+    # cocoa-way's commit state. Wiring is left in place (it is correct); the
+    # investigation + repro live in hosts/private-vm/WAYLAND-GUI.md.
+    waypipe
+    # Wayland bring-up/debug tools (remove once the stack is proven). `foot`
+    # (minimal pure-SHM terminal) and `wayland-info` (wayland-utils) are the
+    # quickest clients to re-test the transport fix against `vm gui`.
+    wayland-utils
+    foot
   ];
 
-  # PulseAudio source for xpra's `--speaker=on` forwarding. xpra captures
-  # the guest pulse sink and streams it over the SSH/xpra transport to
-  # the host's CoreAudio. Without a running pulse server in the guest,
-  # `--speaker=on` has nothing to read and guest apps fall back to "no
-  # audio device" (Firefox silently mutes).
-  #
-  # qemu exposes no audio device to the guest (/proc/asound/cards is
-  # empty); pipewire/wireplumber fabricates an `auto_null` sink that
-  # behaves like /dev/null but exposes a usable `auto_null.monitor`
-  # source. Guest apps (Firefox &c.) play into `auto_null`; xpra is
-  # pointed at `auto_null.monitor` via PULSE_SOURCE in the user unit
-  # below.
+  # Wayland backends for the browser family. Set guest-wide so apps launched by
+  # `vm gui` (a non-login SSH exec) inherit them. zen/firefox honour
+  # MOZ_ENABLE_WAYLAND; Chromium/Electron apps honour NIXOS_OZONE_WL.
+  environment.sessionVariables = {
+    MOZ_ENABLE_WAYLAND = "1";
+    NIXOS_OZONE_WL = "1";
+  };
+
+  # Guest audio stack. Retained from the xpra era but currently INERT for
+  # host playback: waypipe carries Wayland only, not audio, so guest sound
+  # never reaches the Mac yet. Kept because (a) it gives guest apps a sink to
+  # play into (qemu exposes no audio device — /proc/asound/cards is empty — so
+  # pipewire/wireplumber fabricates an `auto_null` sink with a usable
+  # `auto_null.monitor` source; without it Firefox/zen log "no audio device"),
+  # and (b) it's the capture point for a future host-audio path (e.g. forward
+  # `auto_null.monitor` to a host PulseAudio over SSH). Until then, expect no
+  # sound on the host.
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
@@ -84,104 +110,11 @@ in
     home.stateVersion = config.host.stateVersion;
     programs.home-manager.enable = true;
 
-    home.sessionVariables = {
-      DISPLAY = ":100";
-    };
-
-    # Headless xpra server: a persistent X session that lives in the
-    # background, owned by the user, with no display until something
-    # attaches. Guest-launched GUI apps render into this server (via
-    # DISPLAY=:100, set in home.sessionVariables above); the host's
-    # `vm gui` client attaches over SSH and surfaces whatever windows
-    # exist as host-native macOS windows. Detach = windows keep running
-    # invisibly; reattach = they reappear. Closing the last window does
-    # not stop the server.
-    #
-    # Defined under home-manager (not top-level systemd.user) so the
-    # unit is installed ONLY for this user. A top-level systemd.user.*
-    # entry would install for every user with a running user@.service —
-    # including `nixos` (the bootstrap account Lima/private-vm-rebuild
-    # logs in as) — and both servers would race for X display :100,
-    # whose Xvfb abstract socket `@xpra/100` is a system-global name.
-    # nixos wins (lower uid, earlier login), igor's unit crashloops
-    # with "You already have an xpra server running at '@xpra/100'",
-    # and `vm gui` (which attaches as igor) hits a dead socket.
-    #
-    # --daemon=no keeps xpra in the foreground so systemd owns the
-    # lifecycle. --bind-tcp is NOT set: clients attach via SSH only,
-    # using xpra's ssh:// URL scheme, which tunnels over stdio — no
-    # additional TCP port.
-    systemd.user.services.xpra = {
-      Unit.Description = "xpra headless X server on :100";
-      Install.WantedBy = [ "default.target" ];
-      Service = {
-        Type = "simple";
-        # pulseaudio package is on PATH for `pactl`, which xpra uses to
-        # probe the pulse server (sink/source enumeration). The
-        # `--pulseaudio=no` flag means "don't start a private pulse
-        # daemon" — xpra still uses the system pipewire-pulse over its
-        # standard socket (/run/user/1001/pulse/native via
-        # XDG_RUNTIME_DIR). xpra's gstreamer pulsesrc would otherwise
-        # try to capture from a hardcoded `Xpra-Speaker` device that
-        # only exists when `--pulseaudio=yes` spawns its own daemon —
-        # surfacing as "Failed to connect stream: No such entity" in
-        # the audio capture gst pipeline. We override that target by
-        # setting `PULSE_SOURCE=auto_null.monitor` (pulsesrc honours
-        # the env var when no explicit `device=` is configured).
-        #
-        # Note: xpra's `--audio-source=NAME` option takes a GStreamer
-        # source-plugin name (`pulse`, `alsa`, `test`, …), NOT a Pulse
-        # source name; passing a Pulse source there errors with
-        # "unknown source plugin". Hence the env-var route.
-        Environment = [
-          "PATH=${pkgs.xpra}/bin:${pkgs.xorg.xauth}/bin:${pkgs.pulseaudio}/bin:/run/current-system/sw/bin"
-          # GStreamer pulsesrc honours PULSE_SOURCE when no explicit
-          # device= is set. Pin it to the monitor of the fabricated
-          # `auto_null` sink (the only sink in this audio-card-less
-          # guest); without this, xpra's pulsesrc tries to connect to
-          # the long-gone `Xpra-Speaker` device that the legacy
-          # `--pulseaudio=yes` mode used to create, and fails the
-          # capture with "No such entity".
-          "PULSE_SOURCE=auto_null.monitor"
-        ];
-        # Pre-seed ~/.Xauthority with a fresh MIT-MAGIC-COOKIE for :100
-        # before xpra starts. xpra itself shells out to `xauth` to write
-        # this cookie, but in nixpkgs' xpra build that subprocess fails
-        # with ENOENT even though xauth is on the unit PATH (some
-        # internal env-stripping in xpra's spawn path). Without the
-        # cookie, Xorg comes up but every X client (firefox, xclock,
-        # ...) gets "Authorization required, but no authorization
-        # protocol specified" and bails. Doing it ourselves bypasses
-        # the broken xpra→xauth call. The cookie is regenerated on
-        # every (re)start so a previous run's cookie can't shadow this
-        # one.
-        ExecStartPre = pkgs.writeShellScript "xpra-seed-xauth" ''
-          set -eu
-          cookie=$(${pkgs.coreutils}/bin/head -c 16 /dev/urandom | ${pkgs.coreutils}/bin/od -An -tx1 | ${pkgs.coreutils}/bin/tr -d ' \n')
-          ${pkgs.coreutils}/bin/rm -f "$HOME/.Xauthority"
-          ${pkgs.xorg.xauth}/bin/xauth -f "$HOME/.Xauthority" add :100 MIT-MAGIC-COOKIE-1 "$cookie"
-        '';
-        ExecStart = ''
-          ${pkgs.xpra}/bin/xpra start :100 \
-            --daemon=no \
-            --start-via-proxy=no \
-            --pulseaudio=no \
-            --notifications=no \
-            --systemd-run=no \
-            --mdns=no \
-            --webcam=no \
-            --html=off \
-            --bell=no \
-            --speaker=on \
-            --microphone=no \
-            --printing=no \
-            --file-transfer=off \
-            --opengl=yes
-        '';
-        Restart = "on-failure";
-        RestartSec = "2s";
-      };
-    };
+    # No guest-side display server. With waypipe there is nothing persistent to
+    # run here: `vm gui` runs `waypipe server -- <app>` over SSH, waypipe hands
+    # the app a Wayland socket, and cocoa-way on the Mac does the compositing.
+    # (The Wayland backend env vars live at system level in
+    # environment.sessionVariables above.)
 
     programs.zsh.initContent = ''
       _cursor_shape() {
@@ -296,9 +229,10 @@ in
   # Guest-side DRM device via the standard 2D virtio-gpu-pci. The host
   # qemu wrapper attaches `-device virtio-gpu-pci` (no host GL required).
   # hardware.graphics.enable brings in mesa which, via the virtio_gpu kernel
-  # module + llvmpipe, provides software EGL on /dev/dri/renderD128. xpra's
-  # `--opengl=yes` uses that EGL path for GL compositing — meaningfully
-  # better compositing quality than --opengl=no, without needing hardware GL.
+  # module + llvmpipe, provides software EGL on /dev/dri/renderD128. Guest apps
+  # (zen/firefox) render with software GL into SHM buffers that waypipe ships to
+  # cocoa-way; no host GL is required. Kept because /dev/dri is also what
+  # waypipe's eventual dmabuf/GPU passthrough path will use.
   # Hardware GPU (virglrenderer/rutabaga) deferred: virglrenderer requires
   # epoxy/egl.h absent from nixpkgs libepoxy on Darwin; rutabaga requires
   # qemu's loadable-module system which nixpkgs disables on Darwin.

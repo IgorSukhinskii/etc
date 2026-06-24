@@ -1,21 +1,40 @@
 { inputs, ... }:
 {
-  # xpra's nixpkgs derivation is Linux-only (xorg-server, pulseaudioFull,
-  # python-uinput, systemd, …). Upstream ships macOS as a separate py2app
-  # bundle; the brew cask wraps it. Install the cask on the host so the
-  # `vm gui` launcher has an `xpra` binary on PATH.
+  # GUI surfacing stack for the Lima guest. cocoa-way is a native macOS Wayland
+  # compositor (Smithay) that renders each guest Wayland toplevel as its own
+  # Metal-backed NSWindow — real per-window seamless display, crisp text, HiDPI.
+  # waypipe-darwin is the macOS-patched waypipe transport that ships guest
+  # surfaces over the SSH channel into cocoa-way. Together they replace xpra,
+  # which broke on macOS Tahoe (GTK3 Cocoa menu integration mutating NSMenu off
+  # the main thread). Both ship as formulae from the J-x-Z tap.
   flake.darwinModules.private-vm =
     { ... }:
     {
       # age-plugin-se from Homebrew: Touch ID-gated Secure Enclave access for
       # the LUKS passphrase store. A nix-built copy of the plugin can't talk
       # to the SE (codesigning context not preserved through the sandbox).
-      homebrew.brews = [ "age-plugin-se" ];
-      homebrew.casks = [ "xpra" ];
+      # trusted = true emits `tap "j-x-z/tap", trusted: true` in the generated
+      # Brewfile. Homebrew 6.0 refuses to load formulae from non-official taps
+      # unless explicitly trusted; this is the declarative equivalent of a
+      # one-time `brew trust j-x-z/tap`. Trusting this tap lets its formulae run
+      # arbitrary install code — a conscious decision to use this third-party
+      # (single-developer) stack. Requires a nix-darwin new enough to carry the
+      # tap `trusted` option (post-2026-06).
+      homebrew.taps = [
+        {
+          name = "j-x-z/tap";
+          trusted = true;
+        }
+      ];
+      homebrew.brews = [
+        "age-plugin-se"
+        "cocoa-way"
+        "waypipe-darwin"
+      ];
     };
 
   # The `vm` launcher is the mac-side control plane for the Lima guest (it drives
-  # limactl/qemu and surfaces guest GUI apps via xpra). It is NOT a guest concern
+  # limactl/qemu and surfaces guest GUI apps via cocoa-way + waypipe). It is NOT a guest concern
   # and must not load on every host, so it lives off the homeManagerModules
   # registry and is appended host-locally to mac's sharedModules.
   flake.lib.privateVmHm =
@@ -41,8 +60,9 @@
       # start we inject:
       #   virtio-balloon-pci:  FPR → guest returns freed pages to host
       #   virtio-gpu-pci:      2D virtio GPU → guest gets a DRM device so
-      #                        Mesa EGL can run via software (llvmpipe), which
-      #                        xpra's --opengl=yes uses for GL compositing.
+      #                        Mesa EGL can run via software (llvmpipe); guest
+      #                        apps render with software GL into the SHM buffers
+      #                        waypipe ships to cocoa-way.
       #
       # Hardware GPU (rutabaga) status (2026-06-17):
       #   rutabaga_gfx supports Darwin and the nixpkgs override builds cleanly
@@ -376,50 +396,93 @@
       '';
 
       vmGui = pkgs.writeShellScriptBin "vm-gui" ''
-        # Attach an xpra client to the guest's :100 server over SSH. The
-        # guest runs a persistent, headless xpra server as a user systemd
-        # unit (full.nix). Apps launched in the guest with DISPLAY=:100 —
-        # the default in the guest user's session env — render into that
-        # server. This command surfaces those windows on the Mac as native
-        # macOS windows. Closing the windows does not stop the server;
-        # closing this client does not stop the apps.
+        # Surface a guest GUI app as native macOS window(s) — Wayland-native via
+        # cocoa-way (a native macOS Wayland compositor) + waypipe-darwin. The
+        # guest app renders into waypipe's Wayland socket; buffers ship over the
+        # SSH channel; cocoa-way composites each guest toplevel as its own
+        # Metal-backed NSWindow. Unlike the old xpra path there is NO persistent
+        # guest-side server: the app is a child of this waypipe session, so
+        # closing the host window ends the guest app (and quitting here ends the
+        # app). Audio is NOT carried by waypipe — that's a separate follow-up.
         #
-        # No additional ports: xpra speaks its protocol over the SSH
-        # stdio channel via the ssh:// URL scheme. Reuses Lima's SSH
-        # config so authentication is identical to `vm ssh`.
+        # Usage: vm gui [app [args...]]. Defaults to firefox for bring-up
+        # debugging; pass `zen` (the real browser, installed via the browser
+        # profile) or any other Wayland app. waypipe must be on the guest PATH
+        # (full.nix); MOZ_ENABLE_WAYLAND / NIXOS_OZONE_WL are set guest-wide so
+        # Firefox/Chromium-family apps pick the Wayland backend.
         set -euo pipefail
         export LIMA_HOME="${limaHome}"
         ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
 
         "${vmStart}/bin/vm-start"
 
-        # xpra is the brew cask (Linux-only in nixpkgs). Invoke the app
-        # bundle binary directly: the /opt/homebrew/bin/xpra symlink
-        # routes through a launcher script that uses $0's dirname to
-        # locate PythonExecWrapper, which breaks under the symlink.
-        # The cask also installs unsigned-and-quarantined; if Gatekeeper
-        # kills xpra on first run, strip quarantine once:
-        #   xattr -dr com.apple.quarantine /Applications/Xpra.app
-        #
-        # Per-user ControlPath (same pattern as vm-ssh): Lima's
-        # ssh.config has `User nixos` baked in and a shared ControlPath.
-        # With ControlMaster auto + ControlPersist, plain `-l ${vmUser}`
-        # silently multiplexes through the existing nixos channel and
-        # xpra's UDS peercred check fails (uid mismatch). Force a fresh,
-        # ${vmUser}-owned ssh transport.
-        # --encoding=h264: with the guest GPU (virtio-gpu-gl-pci +
-        # virglrenderer), xpra uses its GL compositing path and can encode
-        # via h264. On a loopback VM h264 is smoother than rgb for scrolling
-        # (fewer full-frame sends) and macOS decodes it in VideoToolbox.
-        # --quality=95: high quality, still visually lossless for UI text.
-        # --speed=100: prioritise frame rate over compression ratio
-        # (bandwidth is free on loopback).
-        exec /Applications/Xpra.app/Contents/MacOS/Xpra attach \
-          --ssh="ssh -F $ssh_cfg -l ${vmUser} -o ControlPath=$LIMA_HOME/private-vm/ssh-${vmUser}.sock -o ControlMaster=auto -o ControlPersist=600" \
-          --encoding=h264 \
-          --quality=95 \
-          --speed=100 \
-          "ssh://${vmUser}@lima-private-vm/100"
+        app=( "$@" )
+        if [[ ''${#app[@]} -eq 0 ]]; then
+          app=( firefox )
+        fi
+
+        cocoa_way=/opt/homebrew/bin/cocoa-way
+        waypipe=/opt/homebrew/bin/waypipe
+
+        # cocoa-way's runtime dir is deterministic: it places the wayland-1
+        # socket under $TMPDIR/cocoa-way (on macOS $TMPDIR is the per-user
+        # DARWIN_USER_TEMP_DIR, e.g. /var/folders/.../T/, which is exactly what
+        # the compositor logs as XDG_RUNTIME_DIR).
+        rt="''${TMPDIR:-/tmp/}"
+        rt="''${rt%/}/cocoa-way"
+        sock="$rt/wayland-1"
+
+        # cocoa-way is the host-side compositor. Start it once and reuse across
+        # launches; when no guest windows are open it shows nothing (satisfies
+        # "no persistent VM window"). Logs to /tmp/cocoa-way.log.
+        if ! pgrep -f "$cocoa_way" >/dev/null 2>&1; then
+          # Drop a stale socket from a quit/crashed compositor: it would block
+          # the fresh process from binding, and (worse) make the readiness check
+          # below pass against a dead socket → waypipe ECONNREFUSED. With it
+          # removed, the socket reappearing means the NEW compositor is bound
+          # and listening.
+          rm -f "$sock" 2>/dev/null || true
+          nohup "$cocoa_way" >/tmp/cocoa-way.log 2>&1 &
+        fi
+
+        for _ in $(seq 1 40); do
+          [[ -S "$sock" ]] && break
+          sleep 0.25
+        done
+        if [[ ! -S "$sock" ]]; then
+          echo "cocoa-way Wayland socket never appeared at $sock — is cocoa-way installed and starting? see /tmp/cocoa-way.log" >&2
+          exit 1
+        fi
+
+        export XDG_RUNTIME_DIR="$rt"
+        export WAYLAND_DISPLAY=wayland-1
+
+        # waypipe's `ssh` subcommand forwards these args to ssh, then runs
+        # `waypipe server -- <cmd>` on the guest. Two wrinkles handled here:
+        #   * Per-user ControlPath (as in vm-ssh): Lima's ssh.config bakes
+        #     `User nixos` + a shared ControlPath; with ControlMaster auto +
+        #     ControlPersist a plain `-l ${vmUser}` would silently multiplex
+        #     through the nixos channel. Force a fresh ${vmUser}-owned transport.
+        #     StreamLocalBindUnlink clears a stale guest-side socket.
+        #   * waypipe execs the command directly (no shell) in a NON-login SSH
+        #     session, whose PATH only has the system profile. home-manager
+        #     packages (zen lives in /etc/profiles/per-user/${vmUser}/bin under
+        #     useUserPackages) aren't on it, so we run the app via `env` with an
+        #     explicit PATH (system + per-user + ~/.nix-profile) and the Wayland
+        #     backend vars (also set guest-wide, but a non-login env may miss
+        #     them).
+        exec "$waypipe" --compress=zstd ssh \
+          -F "$ssh_cfg" -l ${vmUser} \
+          -o ControlPath="$LIMA_HOME/private-vm/ssh-${vmUser}.sock" \
+          -o ControlMaster=auto \
+          -o ControlPersist=600 \
+          -o StreamLocalBindUnlink=yes \
+          lima-private-vm \
+          env \
+            PATH="/etc/profiles/per-user/${vmUser}/bin:/home/${vmUser}/.nix-profile/bin:/run/current-system/sw/bin:/usr/bin:/bin" \
+            MOZ_ENABLE_WAYLAND=1 \
+            NIXOS_OZONE_WL=1 \
+            "''${app[@]}"
       '';
 
       vmStop = pkgs.writeShellScriptBin "vm-stop" ''
@@ -653,7 +716,7 @@
             echo "  build          build the bootstrap qcow image" >&2
             echo "  rebuild        deploy NixOS config to the VM" >&2
             echo "  ssh [args]     open a shell or run a command in the VM" >&2
-            echo "  gui            attach an xpra client (surface guest GUI apps)" >&2
+            echo "  gui [app]      surface a guest GUI app via cocoa-way+waypipe (default: firefox)" >&2
             echo "  lock           unmount and close the encrypted home volume" >&2
             echo "  unlock         open and mount the encrypted home volume" >&2
             echo "  new <name>     create a new VM-backed project" >&2
