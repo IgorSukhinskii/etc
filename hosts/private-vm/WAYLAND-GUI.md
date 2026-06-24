@@ -1,10 +1,50 @@
 # private-vm GUI — cocoa-way + waypipe (Wayland), handover
 
-Status: **BLOCKED on a waypipe-darwin transport bug.** Investigation handed
-off mid-flight. This doc has everything needed to resume on the
-**waypipe-darwin** side with no further input.
+Status: **ROOT-CAUSED & FIXED (2026-06-24).** It was **NOT** a waypipe-darwin
+transport bug — it is a one-line bug in **cocoa-way**: its wl_shm reader ignored
+the buffer's offset within the pool. The fix is implemented and verified in the
+source clone at `~/projects/cocoa-way`. Remaining work is only *delivery* (get
+the fixed cocoa-way in front of `vm gui` — see §8). See §3 for the corrected
+diagnosis; the original "transport bug" reasoning below it is preserved but was
+**wrong**.
 
 Date of handover: 2026-06-24. Host: Apple **M4 Pro**, **macOS 26.5.1 (25F80)**.
+
+---
+
+## 0. RESOLUTION (read this first)
+
+**Root cause:** cocoa-way's `src/render.rs::get_buffer_pixels` read wl_shm pixels
+from the **start of the pool**, ignoring `BufferData.offset` (the buffer's byte
+offset within the pool). smithay's `with_buffer_contents` hands back a pointer to
+the *pool* base plus `data.offset`; the offset MUST be applied. Simple clients
+(and the `render-test` harness) put their buffer at offset 0, so they rendered
+fine — which is exactly what made this masquerade as a transport bug. Real apps
+(foot, Firefox/zen, anything on wlroots' shm allocator) sub-allocate many buffers
+from one large pool: foot used a **512 MiB pool with the buffer at a 128 MiB
+offset**. cocoa-way then read the zero-filled region *before* the pixels → a
+fully black (all-zero) buffer.
+
+**Why the original handover blamed waypipe:** the buffer DID arrive over waypipe
+as a live `NewBuffer`, `get_buffer_pixels` WAS called, and it read all-zero
+content — which looks like "the transport delivered an empty buffer". It didn't;
+cocoa-way was reading the wrong slice of a correctly-delivered pool.
+
+**The fix** (in `~/projects/cocoa-way/src/render.rs`, inside `get_buffer_pixels`):
+apply `data.offset` before building the pixel slice —
+`from_raw_parts(ptr.add(offset), len - offset)` (with an `offset >= len` guard).
+One self-contained change; popups benefit too since they share the same reader.
+
+**Verified** (instrumentation since reverted; clean diff is just the fix):
+| Scenario | Before fix | After fix |
+|---|---|---|
+| `render-test` (native, offset 0) | red ✓ | red ✓ |
+| `render-test-offset` (native, 512MiB pool / 128MiB offset) | **black (0% non-zero)** | **red (100%)** |
+| waypipe → `foot` | **black (0% non-zero)** | **renders; center pixel = foot bg #242424** |
+
+`test-client/src/bin/render-test-offset.rs` (new) is the standalone regression
+repro: it reproduces the black window with **no waypipe at all**, proving the bug
+is cocoa-way-side.
 
 ---
 
@@ -137,16 +177,19 @@ get_buffer_pixels: Argb8888  1600x1200  stride=6400
 `get_buffer_pixels` (src/render.rs:11) **was called**, no "nothing rendered"
 warning → cocoa-way **renders the buffer (red window).**
 
-### Conclusion
-**cocoa-way's renderer works. The bug is in the waypipe-darwin transport.**
-Through waypipe, the committed buffer never reaches `get_buffer_pixels`; at
-render time the surface's `current.buffer` is `None` (the `497` branch is not
-hit either), i.e. **buffers committed through waypipe-darwin do not land as a
-live `NewBuffer` in cocoa-way's commit state.** A direct native client commits
-a buffer the exact same compositor renders fine.
+### Conclusion (SUPERSEDED — see §0)
+> ⚠️ The conclusion below was **wrong**. Re-instrumenting cocoa-way's commit
+> handler showed the waypipe-forwarded buffer DID arrive as a live `NewBuffer`
+> and `get_buffer_pixels` WAS called every frame — it just read **all-zero**
+> content. The real cause is cocoa-way ignoring the wl_shm buffer offset (§0).
+> The decisive `render-test` only "proved" the renderer worked because it placed
+> its buffer at offset 0. `render-test-offset` (same compositor, no waypipe,
+> buffer at a 128 MiB offset) reproduces the black window — localizing the bug to
+> cocoa-way, not the transport.
 
-This also explains why none of the earlier changes helped — they were all on
-the wrong side of the pipe.
+~~**cocoa-way's renderer works. The bug is in the waypipe-darwin transport.**~~
+~~Through waypipe, the committed buffer never reaches `get_buffer_pixels`~~ — this
+turned out to be false; see §0 for what actually happens.
 
 ---
 
@@ -201,7 +244,12 @@ socket, not a real failure.
 
 ---
 
-## 5. NEXT STEPS — investigate waypipe-darwin (concrete, no input needed)
+## 5. NEXT STEPS — investigate waypipe-darwin (OBSOLETE — bug was in cocoa-way)
+
+> ⚠️ This whole section chased the wrong layer. The bug was cocoa-way ignoring
+> the wl_shm buffer offset (§0), already fixed. Kept only for the repro recipe in
+> Step 2 (the manual `waypipe … ssh … foot` command), which is still the way to
+> drive a controllable waypipe client by hand. Ignore Steps 3–4.
 
 Goal: find why a buffer committed through waypipe-darwin doesn't become a live
 `NewBuffer` in cocoa-way, then fix it (PR to waypipe-darwin if needed). The
@@ -308,11 +356,88 @@ rendered") — buffers don't land as a live NewBuffer.* Tested guest waypipe
   (XR24/AR24 only, **no dmabuf**), wp_viewporter, wp_fractional_scale_manager_v1,
   zxdg_decoration_manager_v1, seat, etc.
 
-## 7. Loose ends (unrelated to the transport bug)
+## 7. Loose ends
+
+### 7a. Post-offset-fix findings (2026-06-24) — what works, what doesn't
+After the offset fix, **`foot` renders correctly through the full `vm gui`
+pipeline** (the transport+render path is proven good). Three *separate* issues
+remain, none of them the offset bug:
+
+- **Browser bring-up: Chromium works, Gecko (zen/firefox) doesn't.** A test
+  matrix (2026-06-24; harness `/tmp/gui-matrix.sh`, details in
+  **`BROWSER-HANDOFF.md`**) showed: `foot` renders ✓; **`chromium
+  --ozone-platform=wayland` RENDERS ✓** (creates a toplevel, 15 wl_shm buffers;
+  GPU/dmabuf attempts fail → auto software fallback). So the pipeline handles a
+  full browser — a Chromium-family browser is usable today. **Gecko is the
+  specific blocker**, failing BEFORE any window via its **Wayland Proxy**.
+  Firefox/zen connect to cocoa-way (waypipe forwards fine — ~4 "New client
+  connected", Gecko is multiprocess) but create **0 toplevels / 0 buffers**, then
+  die. The error is from Gecko's **Wayland Proxy**:
+  `Wayland Proxy … CheckWaylandDisplay(): Failed to connect to Wayland display
+  '/run/user/1001/wayland-<random>' : No such file or directory` →
+  `we don't have any display, WAYLAND_DISPLAY='wayland-<random>'`. The
+  `wayland-<random>` is the proxy's own socket; it never appears. Errors vary
+  run-to-run (sometimes `no DISPLAY`), i.e. there's a **race / env-propagation**
+  component on top. This is a firefox-over-waypipe problem, NOT cocoa-way. Next
+  steps to try: (1) reliably disable Gecko's wayland proxy — `MOZ_DISABLE_WAYLAND_PROXY=1`
+  did NOT take here, so verify the right knob for this build (possibly a profile
+  pref `widget.wayland.use-proxy=false`); (2) ensure software rendering so any
+  buffer is wl_shm not dmabuf (cocoa-way has no dmabuf) — `modules/zen.nix`
+  already sets `gfx.webrender.software=true`+vaapi off for zen, but the `firefox`
+  debug browser has no such prefs (so even if it starts it may go black via
+  dmabuf); (3) the "black" the user saw earlier was the *render-succeeds-but-
+  empty* mode from a run where the proxy DID come up — chase only after the proxy
+  issue is resolved.
+- **No HiDPI/Retina scaling (criterion #2): `foot` renders crisp but tiny.**
+  cocoa-way advertises a fixed output (1920×1080, `Scale::Integer`) and a
+  scale_factor that isn't tracking the Retina backing scale, so guest apps render
+  at ~1× into a 2× window → tiny. This is cocoa-way-side scale wiring
+  (`state.rs` output/`fractional_scale` + the NSWindow backing scale in the
+  renderer). Separate from the offset fix; revisit in cocoa-way.
+- **"Apps stop launching after a few attempts" (race / stale state).** Confirmed
+  real: stale **waypipe-server** procs + leftover `/run/user/1001/wayland-*`
+  sockets on the guest, and a lingering **ssh ControlPersist=600 master** on the
+  host, accumulate across runs and cause hangs / connect failures (the blueish
+  cocoa-way bg = compositor up, no client). **PARTLY ADDRESSED (2026-06-24):**
+  `vmGui` now health-checks the ssh control master (`ssh -O check`) and resets it
+  if stale before launching (safe for live windows), and a new **`vm gui-reset`**
+  command hard-resets the whole stack (host waypipe+cocoa-way, ssh master, guest
+  waypipe+sockets) — use it when wedged. The half-dead-master edge case may still
+  slip past `-O check`; `vm gui-reset` is the catch-all.
+
+### 7b. Pre-existing
 - **Decorations (criterion #5):** cocoa-way draws server-side titlebars; no
   documented off-switch. `zxdg_decoration_manager_v1` is advertised, so SSD-off
-  may be reachable. Revisit after rendering works.
+  may be reachable.
 - **`vm gui` post-quit hang:** waypipe/ssh ControlPersist lingers after the app
-  exits; Ctrl-C for now. Tidy in `vmGui` once unblocked.
+  exits; Ctrl-C for now. (Same ControlPersist master as the stale-state issue
+  above — fixing one helps the other.)
 - **Audio:** waypipe carries none. pipewire kept in the guest as the future
   capture point (forward `auto_null.monitor` to a host PulseAudio over SSH).
+
+---
+
+## 8. DELIVERY — getting the fixed cocoa-way in front of `vm gui`
+
+The fix lives in the source clone (`~/projects/cocoa-way`), built at
+`~/.cache/cargo-target/release/cocoa-way`. But `vm gui`
+(`modules/private-vm/default.nix` → `vmGui`) launches the **Homebrew** cocoa-way
+(`/opt/homebrew/bin/cocoa-way`, formula `1.0.0`), which still has the bug. Until
+that's resolved, `vm gui` is still black even though the fix exists. Options:
+
+1. **Upstream it (preferred, but outward-facing — needs a decision).** PR the
+   offset fix to `J-x-Z/cocoa-way`, then `brew upgrade cocoa-way`. Clean diff is
+   just the `get_buffer_pixels` change; `render-test-offset.rs` is a ready-made
+   regression test/repro to attach. The fork author is responsive (owns both
+   repos). Filing the PR publishes the repro + diagnosis — get the go-ahead first.
+2. **Interim: point `vm gui` at the local build.** In `vmGui`, set the
+   `cocoa_way=` path to the built binary (or a wrapper) instead of
+   `/opt/homebrew/bin/cocoa-way`, then `nix-rebuild`. Fast; fragile (depends on
+   the clone + `cargo build`). Good for using the VM today while the PR lands.
+3. **Local bottle / overlay.** Build a patched Homebrew bottle or a nix package
+   so the fix is declarative in this repo. More work; most reproducible.
+
+Verify any path with: `vm gui foot` (terminal renders) then `vm gui zen-beta`.
+
+Once rendering is confirmed end-to-end, revisit §7 (decorations off, post-quit
+hang, audio).

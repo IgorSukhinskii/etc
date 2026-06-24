@@ -421,7 +421,17 @@
           app=( firefox )
         fi
 
-        cocoa_way=/opt/homebrew/bin/cocoa-way
+        # INTERIM (see hosts/private-vm/WAYLAND-GUI.md §0/§8): brew cocoa-way
+        # 1.0.0 has the wl_shm buffer-offset bug (every window renders black).
+        # The fix lives in the source clone at ~/projects/cocoa-way; default to
+        # that locally-built binary, fall back to brew if it isn't built yet.
+        # Override with COCOA_WAY_BIN=/path. Replace this with a nix-from-source
+        # package once that lands (then drop the fallback).
+        cocoa_way="''${COCOA_WAY_BIN:-''${CARGO_TARGET_DIR:-$HOME/.cache/cargo-target}/release/cocoa-way}"
+        if [[ ! -x "$cocoa_way" ]]; then
+          echo "note: patched cocoa-way not found at $cocoa_way; falling back to brew (buggy: black windows). Build it: (cd ~/projects/cocoa-way && nix develop --command cargo build --release)" >&2
+          cocoa_way=/opt/homebrew/bin/cocoa-way
+        fi
         waypipe=/opt/homebrew/bin/waypipe
 
         # cocoa-way's runtime dir is deterministic: it places the wayland-1
@@ -471,6 +481,21 @@
         #     explicit PATH (system + per-user + ~/.nix-profile) and the Wayland
         #     backend vars (also set guest-wide, but a non-login env may miss
         #     them).
+        #
+        # Stale-master guard: with ControlMaster=auto + ControlPersist, a master
+        # left half-dead by a crashed/killed prior session makes the next
+        # multiplexed `waypipe ssh` hang. Health-check it and drop it if
+        # unhealthy so we open a fresh one. Safe: a master actively serving an
+        # open window passes `-O check` and is left untouched. (For the harder
+        # cases — orphaned guest waypipe / leftover sockets — use `vm gui-reset`.)
+        ctl="$LIMA_HOME/private-vm/ssh-${vmUser}.sock"
+        if [[ -S "$ctl" ]] && \
+           ! ssh -F "$ssh_cfg" -O check -o ControlPath="$ctl" lima-private-vm 2>/dev/null; then
+          echo "note: stale ssh control master — resetting it" >&2
+          ssh -F "$ssh_cfg" -O exit -o ControlPath="$ctl" lima-private-vm 2>/dev/null || true
+          rm -f "$ctl" 2>/dev/null || true
+        fi
+
         exec "$waypipe" --compress=zstd ssh \
           -F "$ssh_cfg" -l ${vmUser} \
           -o ControlPath="$LIMA_HOME/private-vm/ssh-${vmUser}.sock" \
@@ -483,6 +508,36 @@
             MOZ_ENABLE_WAYLAND=1 \
             NIXOS_OZONE_WL=1 \
             "''${app[@]}"
+      '';
+
+      vmGuiReset = pkgs.writeShellScriptBin "vm-gui-reset" ''
+        # Unstick the GUI stack when `vm gui` hangs or apps show only cocoa-way's
+        # empty background (compositor up, no client). Tears down the host
+        # compositor + transport, the ssh control master, and ALL stale guest
+        # waypipe procs + leftover wayland sockets. NOTE: closes every open guest
+        # window (it's a hard reset). The VM itself keeps running.
+        set -uo pipefail
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
+        rt="''${TMPDIR:-/tmp/}"; rt="''${rt%/}/cocoa-way"
+
+        echo "host: stopping waypipe + cocoa-way…" >&2
+        pkill -9 -f waypipe   2>/dev/null || true
+        pkill -9 -f cocoa-way 2>/dev/null || true
+        rm -f "$rt/wayland-1" 2>/dev/null || true
+
+        ctl="$LIMA_HOME/private-vm/ssh-${vmUser}.sock"
+        echo "host: closing ssh control master…" >&2
+        ssh -F "$ssh_cfg" -O exit -o ControlPath="$ctl" lima-private-vm 2>/dev/null || true
+        rm -f "$ctl" 2>/dev/null || true
+
+        # Guest reap via a fresh non-multiplexed connection. The guest login
+        # shell is zsh (errors on a non-matching glob), so use find -delete.
+        echo "guest: reaping stale waypipe + wayland sockets…" >&2
+        ssh -F "$ssh_cfg" -l ${vmUser} -o ControlPath=none -o ConnectTimeout=8 lima-private-vm \
+          'pkill -9 waypipe 2>/dev/null; find "/run/user/$(id -u)" -maxdepth 1 -name "wayland-*" -delete 2>/dev/null; echo guest-reaped' \
+          2>&1 | tail -1 || true
+        echo "done — rerun: vm gui <app>" >&2
       '';
 
       vmStop = pkgs.writeShellScriptBin "vm-stop" ''
@@ -700,6 +755,7 @@
           ssh)          exec "${vmSsh}/bin/vm-ssh" "$@" ;;
           rebuild)      exec "${vmRebuild}/bin/vm-rebuild" "$@" ;;
           gui)          exec "${vmGui}/bin/vm-gui" "$@" ;;
+          gui-reset)    exec "${vmGuiReset}/bin/vm-gui-reset" "$@" ;;
           lock)         exec "${vmLock}/bin/vm-lock" "$@" ;;
           unlock)       exec "${vmUnlock}/bin/vm-unlock" "$@" ;;
           new)          exec "${vmNew}/bin/vm-new" "$@" ;;
@@ -717,6 +773,7 @@
             echo "  rebuild        deploy NixOS config to the VM" >&2
             echo "  ssh [args]     open a shell or run a command in the VM" >&2
             echo "  gui [app]      surface a guest GUI app via cocoa-way+waypipe (default: firefox)" >&2
+            echo "  gui-reset      hard-reset the GUI stack when it hangs (closes all guest windows)" >&2
             echo "  lock           unmount and close the encrypted home volume" >&2
             echo "  unlock         open and mount the encrypted home volume" >&2
             echo "  new <name>     create a new VM-backed project" >&2
