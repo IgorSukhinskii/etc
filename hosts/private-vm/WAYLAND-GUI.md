@@ -41,6 +41,28 @@ XRGB8888, and enable blending for cocoa-way's Metal texture blit pipeline.
 Without this, Gecko's transparent shell/decor surface is drawn as an opaque black
 surface over the actual browser content.
 
+**The scaling fix:** cocoa-way advertised HiDPI support but started in its
+unchecked "Normal 1x" mode. On Retina that made clients see the 1600x1200 backing
+surface as 1600x1200 logical pixels, so browser UI appeared tiny inside an
+800x600 point macOS window. The local build now starts with the window's macOS
+scale factor, keeps the menu item checked, and advertises 1600x1200 physical /
+scale 2 / 800x600 logical to Wayland clients.
+
+**The Gecko overlay fix:** cocoa-way ignored toplevel
+`xdg_surface.set_window_geometry`. Gecko uses a larger transparent root surface
+for margins/shadows around the real window geometry; drawing that root at the
+tile origin made the transparent decoration rectangle appear offset over the
+left sidebar. The local build now crops the root toplevel buffer to the xdg
+window geometry and draws the cropped pixels at the tile origin, keeping pixels
+and pointer coordinates aligned.
+
+**Known remaining browser gap:** Chromium/Ozone is still not correct after the
+Zen fixes. It renders, but content does not conform to the Cocoa-Way window, a
+small background/root surface appears behind the main one, and pointer
+coordinates are badly offset. Since Zen works and Chromium fails differently, do
+not treat this as part of the Zen bring-up. Future Chromium work should focus on
+Ozone's xdg geometry / viewport / HiDPI interaction with Cocoa-Way.
+
 **Verified** (instrumentation since reverted; clean diff is just the fix):
 | Scenario | Before fix | After fix |
 |---|---|---|

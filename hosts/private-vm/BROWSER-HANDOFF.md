@@ -38,6 +38,9 @@ Validation:
 - no `Wayland Proxy` / `we don't have any display` error appeared.
 - instrumentation showed the Gecko content surface has non-black opaque pixels
   and the larger wrapper surface is transparent once ARGB alpha is preserved.
+- HiDPI scaling is enabled by default in the local cocoa-way build: `wayland-info`
+  reports one 1600x1200 physical mode, `wl_output` scale 2, and
+  `xdg_output` logical size 800x600.
 - the corrected `vm gui-reset` leaves no guest browser/waypipe processes,
   `wayland-*` sockets, or Zen `.parentlock`.
 
@@ -65,6 +68,10 @@ If it regresses:
   path and stale profile locks.
 - A black window with steady `get_buffer_pixels: Argb8888` logs means cocoa-way
   is not the fixed build, or the ARGB alpha/blending patch regressed.
+- Offset translucent chrome or wrong clicks means cocoa-way's xdg window
+  geometry crop/focus-origin handling regressed.
+- Chromium/Ozone is currently a separate compatibility problem: it renders with
+  broken sizing and pointer offsets even after Zen works correctly.
 
 ## 3. Test matrix (engine/toolkit coverage)
 _(harness `/tmp/gui-matrix.sh`; logs `/tmp/mx-cw-*.log`, `/tmp/mx-app-*.log`. Run 2026-06-24.)_
