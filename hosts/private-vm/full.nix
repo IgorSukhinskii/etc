@@ -13,6 +13,9 @@ in
   # bootstrap `nixos` user persists from bootstrap.nix and remains the
   # host-side ops account.
   networking.hostName = "private-vm";
+  networking.extraHosts = ''
+    192.168.5.2 host.private
+  '';
 
   # The user-facing user — SSH (for terminal/tmux work) + xpra (for GUI).
   # nixos is still the host→VM bootstrap account used by private-vm-rebuild

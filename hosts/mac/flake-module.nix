@@ -13,7 +13,10 @@
         ];
         # Mac-side control plane for the Lima private-vm guest (see
         # modules/private-vm/default.nix).
-        extra = [ inputs.self.lib.privateVmHm ];
+        extra = [
+          inputs.self.lib.privateVmHm
+          inputs.self.homeManagerModules.local-llm
+        ];
       })
     ];
     specialArgs = { inherit inputs; };

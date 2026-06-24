@@ -58,7 +58,7 @@
     {
       checks.hm-profiles-complete =
         let
-          hostLocalHm = [ ];
+          hostLocalHm = [ "local-llm" ];
           classified = lib.unique (lib.concatLists (lib.attrValues config.flake.profiles.hm));
           registry = lib.attrNames config.flake.homeManagerModules;
           orphans = lib.subtractLists (classified ++ hostLocalHm) registry;
