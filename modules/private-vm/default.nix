@@ -747,8 +747,10 @@
 
       vmLock = pkgs.writeShellScriptBin "vm-lock" ''
         # Unmount the home volume and close the LUKS container.
-        # --force kicks any process holding /home/${vmUser} (SSH sessions, RDP
-        # desktop, etc.) so the unmount can proceed.
+        # By default this tries a clean unmount and only escalates to killing
+        # processes holding /home/${vmUser} (SSH sessions, RDP desktop, etc.)
+        # when the unmount fails because the volume is busy. --force skips the
+        # graceful attempt and kills straight away.
         set -euo pipefail
         force=0
         case "''${1:-}" in
@@ -759,13 +761,22 @@
         "${vmStart}/bin/vm-start"
         export LIMA_HOME="${limaHome}"
         ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
-        if [ "$force" = 1 ]; then
+
+        # Already locked? cryptsetup status exits non-zero when inactive.
+        if ! ssh -F "$ssh_cfg" lima-private-vm \
+            "sudo cryptsetup status private-home >/dev/null 2>&1"; then
+          echo "home volume already locked" >&2
+          exit 0
+        fi
+
+        # Kill anything holding the home volume, then unmount + close LUKS.
+        lock_force() {
           ssh -F "$ssh_cfg" lima-private-vm "
             sudo loginctl terminate-user ${vmUser} 2>/dev/null || true
             sleep 1
             sudo pkill -KILL -u ${vmUser} 2>/dev/null || true
             sleep 1
-            sudo umount /home/${vmUser}
+            sudo umount /home/${vmUser} 2>/dev/null || true
             sync
             for i in 1 2 3 4 5; do
               sudo cryptsetup luksClose private-home && exit 0
@@ -773,9 +784,14 @@
             done
             exit 1
           "
-        else
-          ssh -F "$ssh_cfg" lima-private-vm \
-            "sudo umount /home/${vmUser} && sudo cryptsetup luksClose private-home"
+        }
+
+        if [ "$force" = 1 ]; then
+          lock_force
+        elif ! ssh -F "$ssh_cfg" lima-private-vm \
+            "sudo umount /home/${vmUser} && sudo cryptsetup luksClose private-home"; then
+          echo "home volume busy; killing processes holding it..." >&2
+          lock_force
         fi
         echo "home volume locked" >&2
       '';
