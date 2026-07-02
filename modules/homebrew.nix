@@ -19,6 +19,7 @@
           "vial"
           "figma"
           "windows-app"
+          "steam"
         ];
       };
     };
