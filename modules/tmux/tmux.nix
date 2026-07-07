@@ -300,7 +300,11 @@
 
       config = {
         programs.tmux.sessionizer.directDirs = [
-          { path = "~/etc"; }
+          # Absolute path (via local.flakeDir), not ~/etc, so a host with the
+          # repo cloned elsewhere still gets the right preset. The picker still
+          # shows it as ~/etc (direct_display rewrites ^$HOME → ~) and the
+          # session name is basename → "etc", so no name override is needed.
+          { path = config.local.flakeDir; }
           { path = "~/vault"; }
           {
             path = "~";

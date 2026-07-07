@@ -8,7 +8,7 @@
       ...
     }:
     let
-      flakeDir = "${config.home.homeDirectory}/etc";
+      flakeDir = config.local.flakeDir;
 
       nixHmModule = pkgs.writeShellScriptBin "nix-hm-module" ''
         # Print the home-manager programs/<name>.nix module for the HM version

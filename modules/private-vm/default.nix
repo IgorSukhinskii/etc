@@ -45,7 +45,7 @@
       ...
     }:
     let
-      flakeDir = "${config.home.homeDirectory}/etc";
+      flakeDir = config.local.flakeDir;
       limaHome = "\${XDG_STATE_HOME:-$HOME/.local/state}/private-vm/lima";
       imageLink = "\${XDG_DATA_HOME:-$HOME/.local/share}/private-vm/images/bootstrap";
       homeDisk = "$HOME/data/private-vm/home.qcow2";
