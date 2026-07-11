@@ -1,3 +1,4 @@
+return function(schemes)
 local tinted = require("tinted-nvim")
 
 tinted.setup({
@@ -6,8 +7,8 @@ tinted.setup({
     transparent = true,
   },
   schemes = {
-    ["base24-dark"] = __DARK_SCHEME__,
-    ["base24-light"] = __LIGHT_SCHEME__,
+    ["base24-dark"] = schemes.dark,
+    ["base24-light"] = schemes.light,
   },
 })
 
@@ -27,3 +28,4 @@ vim.api.nvim_create_autocmd("OptionSet", {
 
 -- Initial call fixes black icon background on first open.
 apply_scheme()
+end

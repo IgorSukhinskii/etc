@@ -53,6 +53,7 @@ in
       dark_scheme = mkSchemeLua "dark" config.themes.palette.dark;
       light_scheme = mkSchemeLua "light" config.themes.palette.light;
       indicator_icon = builtins.fromJSON ''"\u258E"''; # ▎
+      liveNeovimFile = rel: "${config.local.flakeDir}/modules/neovim/${rel}";
     in
     {
       programs.nvf = {
@@ -128,8 +129,78 @@ in
           treesitter.enable = true;
           autocomplete.blink-cmp = {
             enable = true;
+            mappings = {
+              complete = null;
+              confirm = null;
+              next = null;
+              previous = null;
+              close = null;
+              scrollDocsUp = null;
+              scrollDocsDown = null;
+            };
             setupOpts = {
-              keymap.preset = "super-tab";
+              keymap = {
+                preset = "none";
+                "<C-Space>" = [
+                  "show"
+                  "show_documentation"
+                  "hide_documentation"
+                ];
+                "<C-e>" = [
+                  "cancel"
+                  "fallback"
+                ];
+                "<CR>" = [
+                  "accept"
+                  "fallback"
+                ];
+                "<Tab>" = [
+                  "select_next"
+                  "snippet_forward"
+                  "fallback"
+                ];
+                "<S-Tab>" = [
+                  "select_prev"
+                  "snippet_backward"
+                  "fallback"
+                ];
+                "<Up>" = [
+                  "select_prev"
+                  "fallback"
+                ];
+                "<Down>" = [
+                  "select_next"
+                  "fallback"
+                ];
+                "<C-b>" = [
+                  "scroll_documentation_up"
+                  "fallback"
+                ];
+                "<C-f>" = [
+                  "scroll_documentation_down"
+                  "fallback"
+                ];
+                "<C-k>" = [
+                  "show_signature"
+                  "hide_signature"
+                  "fallback"
+                ];
+              };
+              sources = {
+                default = lib.mkForce [
+                  "lsp"
+                  "path"
+                  "snippets"
+                ];
+                providers = {
+                  lsp.fallbacks = lib.mkForce [ ];
+                  path.fallbacks = lib.mkForce [ ];
+                };
+              };
+              completion.list.selection = {
+                preselect = false;
+                auto_insert = false;
+              };
               signature.enabled = true;
             };
           };
@@ -193,15 +264,18 @@ in
               enable = true;
             };
           };
-          luaConfigRC.tinted-polarity = nvfDag.entryBefore [ "pluginConfigs" ] (
-            builtins.replaceStrings [ "__DARK_SCHEME__" "__LIGHT_SCHEME__" ] [ dark_scheme light_scheme ] (
-              builtins.readFile ./tinted-polarity.lua
-            )
-          );
-          luaConfigRC.tinted-bufferline = nvfDag.entryAfter [ "pluginConfigs" ] (
-            builtins.readFile ./tinted-bufferline.lua
-          );
-          luaConfigRC.schemastore = builtins.readFile ./schemastore.lua;
+          luaConfigRC.tinted-polarity = nvfDag.entryBefore [ "pluginConfigs" ] ''
+            assert(loadfile("${liveNeovimFile "tinted-polarity.lua"}"))()({
+              dark = ${dark_scheme},
+              light = ${light_scheme},
+            })
+          '';
+          luaConfigRC.tinted-bufferline = nvfDag.entryAfter [ "pluginConfigs" ] ''
+            assert(loadfile("${liveNeovimFile "tinted-bufferline.lua"}"))()
+          '';
+          luaConfigRC.schemastore = ''
+            assert(loadfile("${liveNeovimFile "schemastore.lua"}"))()
+          '';
           luaConfigRC.buffercycle = /* lua */ ''
             vim.keymap.set("n", "<C-Tab>",   "<Cmd>BufferLineCycleNext<CR>", { desc = "Next buffer" })
             vim.keymap.set("n", "<C-S-Tab>", "<Cmd>BufferLineCyclePrev<CR>", { desc = "Prev buffer" })
