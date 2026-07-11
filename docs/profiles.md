@@ -87,14 +87,13 @@ A resolver defined once (e.g. `modules/lib.nix`) turns a profile list into the
 `sharedModules` list:
 
 ```nix
-{ lib, config, inputs, ... }:
+{ lib, config, ... }:
 {
   flake.lib.mkHmSharedModules = profiles:
     let
       names = lib.unique (lib.concatMap (p: config.flake.profiles.hm.${p}) profiles);
     in
-      map (n: config.flake.homeManagerModules.${n}) names
-      ++ [ inputs.nvf.homeManagerModules.default ];
+      map (n: config.flake.homeManagerModules.${n}) names;
 }
 ```
 

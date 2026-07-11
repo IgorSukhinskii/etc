@@ -1,7 +1,5 @@
-{ inputs, ... }:
+{ ... }:
 let
-  nvfDag = inputs.nvf.lib.nvim.dag;
-
   # Emit a tinted-nvim scheme table literal from a palette attrset (no leading # on values).
   mkSchemeLua = variant: p: ''
     {
@@ -36,264 +34,108 @@ in
 {
   flake.homeManagerModules.neovim =
     {
-      lib,
       pkgs,
       config,
       ...
     }:
 
     let
-      lang = {
-        enable = true;
-        format.enable = true;
-        lsp.enable = true;
-        treesitter.enable = true;
-      };
-
       dark_scheme = mkSchemeLua "dark" config.themes.palette.dark;
       light_scheme = mkSchemeLua "light" config.themes.palette.light;
-      indicator_icon = builtins.fromJSON ''"\u258E"''; # ▎
-      liveNeovimFile = rel: "${config.local.flakeDir}/modules/neovim/${rel}";
+      neovimDir = "${config.local.flakeDir}/modules/neovim";
     in
     {
-      programs.nvf = {
+      programs.neovim = {
         enable = true;
+        viAlias = true;
+        vimAlias = true;
+        withNodeJs = true;
+        withPython3 = false;
+        withRuby = false;
 
-        settings.vim = {
-          viAlias = true;
-          vimAlias = true;
-          # Keep the CLI on PATH for health checks and parser tooling, even though
-          # parsers themselves are primarily supplied declaratively by Nix.
-          extraPackages = [
-            pkgs.tree-sitter
-            pkgs.imagemagick
-            pkgs.poppler-utils
-            pkgs.ghostscript
-          ];
-          # Prefer the newer nixpkgs package until nvf's bundled lightbulb source catches up.
-          pluginOverrides.nvim-lightbulb = pkgs.vimPlugins.nvim-lightbulb;
-          startPlugins = with pkgs.vimPlugins; [
-            SchemaStore-nvim
-            # Guard vim.o.background assignment in tinted.load() so it only fires
-            # after VimEnter. Without this, calling tinted.load() during the VIMINIT
-            # script chain sets background with the script's SID (not -8), causing
-            # Neovim 0.12's VimEnter check to delete the built-in TermResponse
-            # background-detection autocmd, breaking automatic dark/light switching.
-            (tinted-nvim.overrideAttrs (_: {
-              postPatch = ''
-                substituteInPlace lua/tinted-nvim/init.lua \
-                  --replace-fail \
-                    'vim.o.background = palette.variant' \
-                    'if vim.v.vim_did_enter == 1 then vim.o.background = palette.variant end'
-              '';
-            }))
-          ];
-          clipboard = {
-            enable = true;
-            registers = "unnamed,unnamedplus";
-          };
-          debugger.nvim-dap.enable = true;
-          git.gitsigns.enable = true;
-          statusline.lualine = {
-            enable = true;
-            setupOpts.options.theme = "tinted";
-          };
-          tabline.nvimBufferline = {
-            enable = true;
-            setupOpts.options = {
-              indicator = {
-                icon = indicator_icon;
-                style = "icon";
-              };
-              numbers = "none";
-              hover = {
-                enabled = false;
-              };
-              tab_size = 14;
-            };
-          };
-          lsp = {
-            enable = true;
-            formatOnSave = true;
-            lightbulb.enable = true;
-            # nvf adds legacy alias filetypes that trip vim.lsp health despite working detection.
-            servers.ts_ls.filetypes = lib.mkForce [
-              "javascript"
-              "javascriptreact"
-              "typescript"
-              "typescriptreact"
-            ];
-            # Keep yamlls aligned with real Neovim filetypes to avoid false-positive health warnings.
-            servers."yaml-language-server".filetypes = lib.mkForce [ "yaml" ];
-          };
-          treesitter.enable = true;
-          autocomplete.blink-cmp = {
-            enable = true;
-            mappings = {
-              complete = null;
-              confirm = null;
-              next = null;
-              previous = null;
-              close = null;
-              scrollDocsUp = null;
-              scrollDocsDown = null;
-            };
-            setupOpts = {
-              keymap = {
-                preset = "none";
-                "<C-Space>" = [
-                  "show"
-                  "show_documentation"
-                  "hide_documentation"
-                ];
-                "<C-e>" = [
-                  "cancel"
-                  "fallback"
-                ];
-                "<CR>" = [
-                  "accept"
-                  "fallback"
-                ];
-                "<Tab>" = [
-                  "select_next"
-                  "snippet_forward"
-                  "fallback"
-                ];
-                "<S-Tab>" = [
-                  "select_prev"
-                  "snippet_backward"
-                  "fallback"
-                ];
-                "<Up>" = [
-                  "select_prev"
-                  "fallback"
-                ];
-                "<Down>" = [
-                  "select_next"
-                  "fallback"
-                ];
-                "<C-b>" = [
-                  "scroll_documentation_up"
-                  "fallback"
-                ];
-                "<C-f>" = [
-                  "scroll_documentation_down"
-                  "fallback"
-                ];
-                "<C-k>" = [
-                  "show_signature"
-                  "hide_signature"
-                  "fallback"
-                ];
-              };
-              sources = {
-                default = lib.mkForce [
-                  "lsp"
-                  "path"
-                  "snippets"
-                ];
-                providers = {
-                  lsp.fallbacks = lib.mkForce [ ];
-                  path.fallbacks = lib.mkForce [ ];
-                };
-              };
-              completion.list.selection = {
-                preselect = false;
-                auto_insert = false;
-              };
-              signature.enabled = true;
-            };
-          };
-          telescope = {
-            enable = true;
-            setupOpts.defaults.layout_strategy = "flex";
-          };
-          utility.snacks-nvim = {
-            enable = true;
-            setupOpts = {
-              explorer.enabled = true;
-              picker = {
-                enabled = true;
-                sources.explorer = {
-                  hidden = true;
-                  auto_close = true;
-                  layout = {
-                    preset = "sidebar";
-                    preview = "main";
-                  };
-                };
-              };
-              image.enabled = true;
-            };
-          };
-          binds.whichKey.enable = true;
-          languages = {
-            enableDAP = true;
-            enableTreesitter = true;
-            python = lang // {
-              lsp.enable = false;
-            };
-            typescript = lang;
-            bash = lang;
-            lua = lang;
-            yaml = {
-              enable = true;
-              lsp.enable = true;
-              treesitter.enable = true;
-            };
-            markdown = lang // {
-              extraDiagnostics.enable = true;
-              lsp.servers = [ "markdown-oxide" ];
-            };
-            json = lang // {
-              lsp.servers = [ "vscode-json-language-server" ];
-            };
-            nu = {
-              enable = true;
-              lsp.enable = true;
-              treesitter.enable = true;
-            };
-            zig = {
-              enable = true;
-              lsp.enable = true;
-              treesitter.enable = true;
-            };
-            typst = lang;
-            rust = lang;
-            wgsl = {
-              enable = true;
-            };
-          };
-          luaConfigRC.tinted-polarity = nvfDag.entryBefore [ "pluginConfigs" ] ''
-            assert(loadfile("${liveNeovimFile "tinted-polarity.lua"}"))()({
-              dark = ${dark_scheme},
-              light = ${light_scheme},
-            })
-          '';
-          luaConfigRC.tinted-bufferline = nvfDag.entryAfter [ "pluginConfigs" ] ''
-            assert(loadfile("${liveNeovimFile "tinted-bufferline.lua"}"))()
-          '';
-          luaConfigRC.schemastore = ''
-            assert(loadfile("${liveNeovimFile "schemastore.lua"}"))()
-          '';
-          luaConfigRC.buffercycle = /* lua */ ''
-            vim.keymap.set("n", "<C-Tab>",   "<Cmd>BufferLineCycleNext<CR>", { desc = "Next buffer" })
-            vim.keymap.set("n", "<C-S-Tab>", "<Cmd>BufferLineCyclePrev<CR>", { desc = "Prev buffer" })
-          '';
-          luaConfigRC.snacks-explorer-toggle = /* lua */ ''
-            vim.keymap.set("n", "<leader>tt", function()
-              require("snacks").explorer()
-            end, { desc = "Toggle snacks explorer" })
-          '';
-          visuals.indent-blankline.enable = true;
-          visuals.nvim-scrollbar.enable = true;
-          ui.illuminate.enable = true;
-          ui.noice = {
-            enable = true;
-            setupOpts.lsp.signature.enabled = true;
-          };
-          notify.nvim-notify.enable = true;
-        };
+        extraPackages = with pkgs; [
+          tree-sitter
+          imagemagick
+          poppler-utils
+          ghostscript
+
+          bash-language-server
+          lua-language-server
+          markdown-oxide
+          nixd
+          nixfmt
+          nushell
+          rust-analyzer
+          tinymist
+          typescript-language-server
+          vscode-langservers-extracted
+          yaml-language-server
+          zls
+        ];
+
+        plugins = with pkgs.vimPlugins; [
+          SchemaStore-nvim
+          blink-cmp
+          bufferline-nvim
+          conform-nvim
+          gitsigns-nvim
+          indent-blankline-nvim
+          lualine-nvim
+          noice-nvim
+          nvim-dap
+          nvim-lspconfig
+          nvim-lightbulb
+          nvim-notify
+          nvim-scrollbar
+          plenary-nvim
+          snacks-nvim
+          telescope-nvim
+          vim-illuminate
+          which-key-nvim
+
+          (nvim-treesitter.withPlugins (
+            p: with p; [
+              bash
+              javascript
+              json
+              lua
+              markdown
+              markdown_inline
+              nix
+              nu
+              python
+              rust
+              tsx
+              typescript
+              typst
+              wgsl
+              yaml
+              zig
+            ]
+          ))
+
+          # Guard vim.o.background assignment in tinted.load() so it only fires
+          # after VimEnter. Without this, calling tinted.load() during startup
+          # sets background with the script's SID, which can break automatic
+          # terminal background detection.
+          (tinted-nvim.overrideAttrs (_: {
+            postPatch = ''
+              substituteInPlace lua/tinted-nvim/init.lua \
+                --replace-fail \
+                  'vim.o.background = palette.variant' \
+                  'if vim.v.vim_did_enter == 1 then vim.o.background = palette.variant end'
+            '';
+          }))
+        ];
+
+        initLua = ''
+          vim.g.etc_neovim_dir = ${builtins.toJSON neovimDir}
+          vim.g.etc_neovim_schemes = {
+            dark = ${dark_scheme},
+            light = ${light_scheme},
+          }
+          assert(loadfile(${builtins.toJSON "${neovimDir}/init.lua"}))()
+        '';
       };
     };
 }

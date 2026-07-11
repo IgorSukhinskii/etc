@@ -1,13 +1,12 @@
 {
   lib,
   config,
-  inputs,
   ...
 }:
 let
   # Always-on HM module carrying host-local options that every HM eval needs
-  # regardless of profile. Appended to sharedModules below (like nvf), so it is
-  # never routed through the profile registry / completeness check.
+  # regardless of profile. Appended to sharedModules below, so it is never routed
+  # through the profile registry / completeness check.
   #
   # `local.flakeDir` is the single source of truth for the working-copy location
   # of this repo on the current host. It cannot be derived from the flake (`self`
@@ -34,18 +33,14 @@ let
 
   # Turn a list of profile names into a home-manager.sharedModules list: union
   # the profiles' module names, resolve each to its registered module, and append
-  # nvf + the host-local options (wanted on every host). Hosts append their own
-  # one-offs via `extra`.
+  # the host-local options (wanted on every host). Hosts append their own one-offs
+  # via `extra`.
   mkHmSharedModules =
     profiles:
     let
       names = lib.unique (lib.concatMap (p: config.flake.profiles.hm.${p}) profiles);
     in
-    map (n: config.flake.homeManagerModules.${n}) names
-    ++ [
-      inputs.nvf.homeManagerModules.default
-      localOptions
-    ];
+    map (n: config.flake.homeManagerModules.${n}) names ++ [ localOptions ];
 in
 {
   flake.lib.mkHmSharedModules = mkHmSharedModules;
