@@ -576,6 +576,83 @@
         echo "done — rerun: vm gui <app>" >&2
       '';
 
+      vmGuiStatus = pkgs.writeShellScriptBin "vm-gui-status" ''
+        # Show the host/guest process state for the cocoa-way + waypipe GUI path.
+        # This is intentionally read-only: use `vm gui-reset` for cleanup.
+        set -uo pipefail
+
+        export LIMA_HOME="${limaHome}"
+        vm_dir="$LIMA_HOME/private-vm"
+        ssh_cfg="$vm_dir/ssh.config"
+        ctl="$vm_dir/ssh-${vmUser}.sock"
+        rt="''${TMPDIR:-/tmp/}"
+        rt="''${rt%/}/cocoa-way"
+        sock="$rt/wayland-1"
+        cocoa_way="''${COCOA_WAY_BIN:-''${CARGO_TARGET_DIR:-$HOME/.cache/cargo-target}/release/cocoa-way}"
+
+        section() {
+          printf '\n== %s ==\n' "$1"
+        }
+
+        show_processes() {
+          local title="$1"
+          local pattern="$2"
+
+          section "$title"
+          ps ax -o pid,ppid,etime,stat,command \
+            | awk -v pattern="$pattern" '$0 ~ pattern && $0 !~ /awk -v pattern/ { print }' \
+            || true
+        }
+
+        section "VM"
+        if [[ -f "$vm_dir/qemu.pid" ]] && kill -0 "$(cat "$vm_dir/qemu.pid")" 2>/dev/null; then
+          printf 'qemu: running pid=%s\n' "$(cat "$vm_dir/qemu.pid")"
+        else
+          printf 'qemu: not running\n'
+        fi
+
+        if [[ -S "$ctl" ]]; then
+          printf 'ssh mux: %s\n' "$ctl"
+          ssh -F "$ssh_cfg" -O check -o ControlPath="$ctl" lima-private-vm 2>&1 \
+            | sed 's/^/  /' || true
+        else
+          printf 'ssh mux: absent\n'
+        fi
+
+        section "Cocoa-Way"
+        if [[ -x "$cocoa_way" ]]; then
+          printf 'binary: %s\n' "$cocoa_way"
+        else
+          printf 'binary: missing or not executable: %s\n' "$cocoa_way"
+        fi
+
+        if [[ -S "$sock" ]]; then
+          printf 'socket: %s\n' "$sock"
+        else
+          printf 'socket: absent: %s\n' "$sock"
+        fi
+
+        show_processes "Host GUI Processes" '(/opt/homebrew/bin/waypipe|/cocoa-way$|/cocoa-way |ssh-${vmUser}\.sock)'
+
+        section "Guest GUI Processes"
+        if [[ -f "$ssh_cfg" ]]; then
+          ssh -F "$ssh_cfg" -l ${vmUser} -o ControlPath=none -o ConnectTimeout=4 lima-private-vm \
+            'ps -eo pid,ppid,etime,stat,comm,args | grep -E "waypipe|zen|firefox" | grep -v grep || true; echo; find "/run/user/$(id -u)" -maxdepth 1 -name "wayland-*" -ls 2>/dev/null || true' \
+            2>&1 || true
+        else
+          printf 'missing ssh config: %s\n' "$ssh_cfg"
+        fi
+
+        section "Recent Logs"
+        for log in /tmp/cocoa-way.log /tmp/vm-gui-zen-beta.log /tmp/vm-gui-firefox.log /tmp/vm-gui-foot.log; do
+          [[ -e "$log" ]] || continue
+          printf '\n-- %s --\n' "$log"
+          tail -20 "$log" 2>/dev/null \
+            | ${pkgs.perl}/bin/perl -pe 's/\e\[[0-9;]*[[:alpha:]]//g' \
+            || true
+        done
+      '';
+
       vmStop = pkgs.writeShellScriptBin "vm-stop" ''
         set -euo pipefail
         export LIMA_HOME="${limaHome}"
@@ -807,6 +884,7 @@
           ssh)          exec "${vmSsh}/bin/vm-ssh" "$@" ;;
           rebuild)      exec "${vmRebuild}/bin/vm-rebuild" "$@" ;;
           gui)          exec "${vmGui}/bin/vm-gui" "$@" ;;
+          gui-status)   exec "${vmGuiStatus}/bin/vm-gui-status" "$@" ;;
           gui-reset)    exec "${vmGuiReset}/bin/vm-gui-reset" "$@" ;;
           lock)         exec "${vmLock}/bin/vm-lock" "$@" ;;
           unlock)       exec "${vmUnlock}/bin/vm-unlock" "$@" ;;
@@ -825,6 +903,7 @@
             echo "  rebuild        deploy NixOS config to the VM" >&2
             echo "  ssh [args]     open a shell or run a command in the VM" >&2
             echo "  gui [app]      surface a guest GUI app via cocoa-way+waypipe (default: firefox)" >&2
+            echo "  gui-status     show cocoa-way/waypipe host+guest process state" >&2
             echo "  gui-reset      hard-reset the GUI stack when it hangs (closes all guest windows)" >&2
             echo "  lock           unmount and close the encrypted home volume" >&2
             echo "  unlock         open and mount the encrypted home volume" >&2
