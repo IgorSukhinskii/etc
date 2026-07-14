@@ -190,10 +190,66 @@ end
 local telescope = has("telescope")
 if telescope then
   telescope.setup({
+    pickers = {
+      find_files = {
+        find_command = { "fd", "--type=file" },
+      },
+    },
     defaults = {
       layout_strategy = "flex",
+      vimgrep_arguments = {
+        "rg",
+        "--color=never",
+        "--no-heading",
+        "--with-filename",
+        "--line-number",
+        "--column",
+        "--smart-case",
+        "--hidden",
+        "--no-ignore",
+      },
+      file_ignore_patterns = { "node_modules", "%.git/", "dist/", "build/", "target/", "result/" },
+      path_display = { "absolute" },
+      set_env = { COLORTERM = "truecolor" },
+      sorting_strategy = "ascending",
+      layout_config = {
+        horizontal = {
+          prompt_position = "top",
+          preview_width = 0.55,
+        },
+        vertical = {
+          mirror = false,
+        },
+        width = 0.8,
+        height = 0.8,
+        preview_cutoff = 120,
+      },
     },
   })
+  pcall(telescope.load_extension, "noice")
+  pcall(telescope.load_extension, "notify")
+
+  local builtin = require("telescope.builtin")
+  vim.keymap.set("n", "<leader>ff", builtin.find_files, { desc = "Find files [Telescope]" })
+  vim.keymap.set("n", "<leader>fg", builtin.live_grep, { desc = "Live grep [Telescope]" })
+  vim.keymap.set("n", "<leader>fb", builtin.buffers, { desc = "Buffers [Telescope]" })
+  vim.keymap.set("n", "<leader>fh", builtin.help_tags, { desc = "Help tags [Telescope]" })
+  vim.keymap.set("n", "<leader>ft", "<Cmd>Telescope<CR>", { desc = "Open [Telescope]" })
+  vim.keymap.set("n", "<leader>fr", builtin.resume, { desc = "Resume (previous search) [Telescope]" })
+  vim.keymap.set("n", "<leader>fvf", builtin.git_files, { desc = "Git files [Telescope]" })
+  vim.keymap.set("n", "<leader>fvcw", builtin.git_commits, { desc = "Git commits [Telescope]" })
+  vim.keymap.set("n", "<leader>fvcb", builtin.git_bcommits, { desc = "Git buffer commits [Telescope]" })
+  vim.keymap.set("n", "<leader>fvb", builtin.git_branches, { desc = "Git branches [Telescope]" })
+  vim.keymap.set("n", "<leader>fvs", builtin.git_status, { desc = "Git status [Telescope]" })
+  vim.keymap.set("n", "<leader>fvx", builtin.git_stash, { desc = "Git stash [Telescope]" })
+  vim.keymap.set("n", "<leader>flsb", builtin.lsp_document_symbols, { desc = "LSP Document Symbols [Telescope]" })
+  vim.keymap.set("n", "<leader>flsw", builtin.lsp_workspace_symbols, { desc = "LSP Workspace Symbols [Telescope]" })
+  vim.keymap.set("n", "<leader>flr", builtin.lsp_references, { desc = "LSP References [Telescope]" })
+  vim.keymap.set("n", "<leader>fli", builtin.lsp_implementations, { desc = "LSP Implementations [Telescope]" })
+  vim.keymap.set("n", "<leader>flD", builtin.lsp_definitions, { desc = "LSP Definitions [Telescope]" })
+  vim.keymap.set("n", "<leader>flt", builtin.lsp_type_definitions, { desc = "LSP Type Definitions [Telescope]" })
+  vim.keymap.set("n", "<leader>fld", builtin.diagnostics, { desc = "Diagnostics [Telescope]" })
+  vim.keymap.set("n", "<leader>fs", builtin.treesitter, { desc = "Treesitter [Telescope]" })
 end
 
 local snacks = has("snacks")

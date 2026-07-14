@@ -55,9 +55,11 @@ in
 
         extraPackages = with pkgs; [
           tree-sitter
+          fd
           imagemagick
           poppler-utils
           ghostscript
+          ripgrep
 
           bash-language-server
           lua-language-server
