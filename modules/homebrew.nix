@@ -20,6 +20,7 @@
           "figma"
           "windows-app"
           "steam"
+          "spotify"
         ];
       };
     };
