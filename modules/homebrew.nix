@@ -21,6 +21,7 @@
           "windows-app"
           "steam"
           "spotify"
+          "t3-code"
         ];
       };
     };
