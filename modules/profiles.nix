@@ -23,6 +23,7 @@
       "themes"
     ];
     ai = [
+      "agentSkills"
       "claude"
       "codex"
       "opencode"
