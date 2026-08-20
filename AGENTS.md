@@ -1,8 +1,7 @@
 # Nix config verification
 
-Before proposing nix-darwin, home-manager, or app-level config options, ALWAYS
-verify against actual source in the nix store first. Four commands are on PATH
-after rebuild:
+Before proposing nix-darwin, home-manager, or app-level config options,
+verify against actual source in the nix store first using the followin commands:
 
 ## Nix module options (home-manager / nix-darwin)
 
