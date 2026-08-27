@@ -51,12 +51,26 @@ if conform then
     },
     formatters_by_ft = {
       nix = { "nixfmt" },
+      markdown = { "mdformat" },
+    },
+    formatters = {
+      -- Aligns table pipes and reflows prose at 80 columns. Table cells
+      -- themselves cannot wrap: GFM requires one row per source line.
+      mdformat = {
+        prepend_args = { "--wrap", "80" },
+      },
     },
   })
 end
 
+local has_render_markdown = pcall(require, "render-markdown")
+
 local blink = has("blink.cmp")
 if blink then
+  local sources = { "lsp", "path", "snippets" }
+  if has_render_markdown then
+    table.insert(sources, "markdown")
+  end
   blink.setup({
     keymap = {
       preset = "none",
@@ -72,10 +86,15 @@ if blink then
       ["<C-k>"] = { "show_signature", "hide_signature", "fallback" },
     },
     sources = {
-      default = { "lsp", "path", "snippets" },
+      default = sources,
       providers = {
         lsp = { fallbacks = {} },
         path = { fallbacks = {} },
+        markdown = {
+          name = "RenderMarkdown",
+          module = "render-markdown.integ.blink",
+          fallbacks = { "lsp" },
+        },
       },
     },
     completion = {
@@ -116,7 +135,7 @@ lsp("ts_ls", {
     "typescriptreact",
   },
 })
-lsp("markdown_oxide")
+lsp("marksman")
 lsp("nushell")
 lsp("zls")
 lsp("tinymist")
@@ -144,6 +163,10 @@ if treesitter then
     highlight = { enable = true },
     indent = { enable = true },
   })
+end
+
+if has_render_markdown then
+  assert(loadfile(vim.g.etc_neovim_dir .. "/markdown.lua"))()
 end
 
 local gitsigns = has("gitsigns")

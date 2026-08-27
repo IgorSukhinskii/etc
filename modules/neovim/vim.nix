@@ -40,6 +40,18 @@ in
     }:
 
     let
+      # Wrapped-cell rendering for wide markdown tables; not in nixpkgs.
+      markdown-table-wrap-nvim = pkgs.vimUtils.buildVimPlugin {
+        pname = "markdown-table-wrap.nvim";
+        version = "0-unstable-2026-08-23";
+        src = pkgs.fetchFromGitHub {
+          owner = "ice345";
+          repo = "markdown-table-wrap.nvim";
+          rev = "c9febfeb82770086f06ed4c2d597651a4b76d5d6";
+          hash = "sha256-wTuwvGsKGsuJLgl9/eXO/3kEuGf6shVPDdqQp3EFWs0=";
+        };
+      };
+
       dark_scheme = mkSchemeLua "dark" config.themes.palette.dark;
       light_scheme = mkSchemeLua "light" config.themes.palette.light;
       neovimDir = "${config.local.flakeDir}/modules/neovim";
@@ -63,7 +75,14 @@ in
 
           bash-language-server
           lua-language-server
-          markdown-oxide
+          marksman
+          (mdformat.withPlugins (
+            ps: with ps; [
+              mdformat-gfm
+              mdformat-frontmatter
+              mdformat-footnote
+            ]
+          ))
           nixd
           nixfmt
           nushell
@@ -81,8 +100,10 @@ in
           bufferline-nvim
           conform-nvim
           gitsigns-nvim
+          img-clip-nvim
           indent-blankline-nvim
           lualine-nvim
+          markdown-table-wrap-nvim
           noice-nvim
           nvim-dap
           nvim-lspconfig
@@ -90,6 +111,7 @@ in
           nvim-notify
           nvim-scrollbar
           plenary-nvim
+          render-markdown-nvim
           snacks-nvim
           telescope-nvim
           vim-illuminate
@@ -101,6 +123,7 @@ in
               javascript
               json
               lua
+              html
               markdown
               markdown_inline
               nix
