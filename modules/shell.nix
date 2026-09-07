@@ -57,6 +57,10 @@
       programs.fzf = {
         enable = true;
         defaultOptions = [ "--color 16" ];
+        # Atuin owns Ctrl-R. Both integrations bind it and atuin's is sourced
+        # last, so this only makes the existing behaviour explicit -- it silences
+        # the home-manager warning about the two fighting over the key.
+        historyWidget.zsh.command = "";
       };
 
       programs.vivid = {
