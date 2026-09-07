@@ -7,6 +7,8 @@
 
       programs.fd.enable = true;
 
+      programs.jq.enable = true;
+
       programs.gh = {
         enable = true;
         settings.git_protocol = "ssh";
@@ -108,7 +110,10 @@
 
       home.packages =
         with pkgs;
-        [ azure-cli ]
+        [
+          azure-cli
+          yq-go
+        ]
         ++ lib.optionals stdenv.isDarwin [
           pngpaste
           qmk
