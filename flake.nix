@@ -34,6 +34,15 @@
       url = "github:not-in-stock/kanata-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # kanata is deliberately pinned and must NOT follow `nixpkgs`. macOS TCC keys
+    # the Input Monitoring / Accessibility grants on the binary's absolute path
+    # *and* its ad-hoc cdhash (the binary is `adhoc, linker-signed`: no Team ID,
+    # no stable identity). Both change on every rebuild, so an unpinned kanata
+    # loses both permissions on each `nix flake update` and the daemon dies until
+    # they are re-granted by hand. Freezing the derivation freezes the store path.
+    # Bumping this rev is a deliberate act that costs one manual re-grant of both
+    # permissions -- see modules/kanata/kanata.nix.
+    nixpkgs-kanata.url = "github:NixOS/nixpkgs/17de0b976395537756f30a3e78f2f06e5cec89ed";
     nixos-wsl = {
       url = "github:nix-community/NixOS-WSL";
       inputs.nixpkgs.follows = "nixpkgs";
