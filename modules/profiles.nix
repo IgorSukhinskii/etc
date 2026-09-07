@@ -43,7 +43,6 @@
       "jira"
       "openwhispr"
       "tridactyl"
-      "copilot"
       "homebrew"
       "terminal"
       "ghostty-themes"
