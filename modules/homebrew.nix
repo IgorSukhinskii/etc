@@ -7,6 +7,17 @@
         enable = true;
         onActivation = {
           autoUpdate = false;
+          # DANGER: `zap`, unlike `uninstall`, runs each removed cask's zap stanza,
+          # which deletes *user data*, not just the app. Removing `claude-code`
+          # from the list below once wiped ~/.claude, ~/.claude.json and all of
+          # ~/.config/claude (project histories, history.jsonl, memory/) in a
+          # single activation -- recoverable only because brew trashes instead of
+          # unlinking. Before deleting any cask from `casks`, read its zap stanza
+          # (`brew info --cask <name>`) and back up anything it lists.
+          #
+          # This also collides with the hand-installed j-x-z/tap formulae that the
+          # private-vm GUI needs (cocoa-way, waypipe-darwin): every activation
+          # tries to remove them and is saved only by brew's dependency check.
           cleanup = "zap";
           extraFlags = [ "--force" ];
           upgrade = false;

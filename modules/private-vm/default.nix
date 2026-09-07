@@ -30,6 +30,27 @@
         "age-plugin-se"
         "cocoa-way"
         "waypipe-darwin"
+
+        # Runtime dependencies of cocoa-way/waypipe-darwin, declared explicitly.
+        # `brew bundle cleanup` (homebrew.onActivation.cleanup = "zap") listed
+        # these for removal on every activation and then aborted the whole cleanup
+        # with `Refusing to uninstall ... required by cocoa-way and
+        # waypipe-darwin`, so nothing was ever cleaned up and each rebuild printed
+        # the same error. Naming them here takes them out of the removal set.
+        # Exactly `brew deps --installed --union cocoa-way waypipe-darwin
+        # age-plugin-se`; re-run that if the tap changes its dependencies.
+        # Build-only deps (rust, bindgen, llvm, python@3.14, ...) are deliberately
+        # NOT listed -- brew reinstalls them on demand if these get rebuilt.
+        "libxau"
+        "libxcb"
+        "libxdmcp"
+        "libxkbcommon"
+        "lz4"
+        "pixman"
+        "xkeyboard-config"
+        "xorgproto"
+        "xz"
+        "zstd"
       ];
     };
 
