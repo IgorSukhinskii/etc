@@ -758,7 +758,24 @@
           exit 1
         fi
 
-        "${vmGui}/bin/vm-gui" zen "http://127.0.0.1:$guest_port"
+        # Resolve the browser in the guest rather than assuming a name: the
+        # zen package installs its binary as `zen-beta`, and `vm gui zen` fails
+        # silently (env reports "No such file or directory" into the gui log and
+        # the launcher has already detached, so nothing surfaces here).
+        browser=""
+        for candidate in zen-beta zen firefox; do
+          if guest "command -v $candidate >/dev/null 2>&1"; then
+            browser="$candidate"
+            break
+          fi
+        done
+        if [[ -z "$browser" ]]; then
+          echo "no browser found in the guest (looked for zen-beta, zen, firefox)" >&2
+          echo "SillyTavern is up at http://127.0.0.1:$guest_port inside the VM" >&2
+          exit 1
+        fi
+
+        "${vmGui}/bin/vm-gui" "$browser" "http://127.0.0.1:$guest_port"
 
         echo >&2
         echo "chat is up. Ctrl-C here to close SillyTavern." >&2
