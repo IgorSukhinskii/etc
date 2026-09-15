@@ -110,7 +110,10 @@ in
     "/var/lib/private-vm/%u.pub"
   ];
 
-  nix.settings.experimental-features = "nix-command flakes";
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
   nix.settings.trusted-users = [
     "root"
     "nixos"
