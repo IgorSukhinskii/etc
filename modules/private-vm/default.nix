@@ -359,7 +359,10 @@
         # Pushes:
         #   - passwd.hash (user password hash, for sudo)
         #   - ${vmUser}.pub (real user's SSH key, for vm ssh)
-        # both into /var/lib/private-vm/. Rotation = re-run this with new
+        #   - local-llm-ca.crt (private CA for the host's llama-server, if the
+        #     host has run local-llm-init; optional, so a machine without the
+        #     local-LLM stack rebuilds unchanged)
+        # all into /var/lib/private-vm/. Rotation = re-run this with new
         # source files. Then rsyncs etc/ → /home/nixos/etc and runs
         # nixos-rebuild switch inside the VM (uses the VM's own builder —
         # no host linux-builder involvement after the initial image).
@@ -394,6 +397,21 @@
         done
 
         ssh -F "$ssh_cfg" lima-private-vm 'sudo mkdir -p /var/lib/private-vm'
+
+        # CA trust for the host's llama-server is pushed at runtime, not
+        # declared: security.pki.certificateFiles would need an eval-time read
+        # of a path outside the flake, which breaks pure evaluation of
+        # nixosConfigurations.private-vm inside the VM. Consumers point
+        # NODE_EXTRA_CA_CERTS / curl --cacert at this file instead.
+        local_llm_ca="''${XDG_CONFIG_HOME:-$HOME/.config}/local-llm/tls/ca.crt"
+        if [[ -f "$local_llm_ca" ]]; then
+          scp -F "$ssh_cfg" "$local_llm_ca" lima-private-vm:/tmp/local-llm-ca.crt
+          ssh -F "$ssh_cfg" lima-private-vm '
+            sudo install -m0644 /tmp/local-llm-ca.crt /var/lib/private-vm/local-llm-ca.crt &&
+            rm -f /tmp/local-llm-ca.crt
+          '
+        fi
+
         scp -F "$ssh_cfg" "$passwd_hash"  lima-private-vm:/tmp/passwd.hash
         scp -F "$ssh_cfg" "$pubkey"       lima-private-vm:/tmp/${vmUser}.pub
         scp -F "$ssh_cfg" "$lima_pubkey"  lima-private-vm:/tmp/lima.pub
@@ -565,6 +583,183 @@
             "''${app[@]}" >"$log" 2>&1 </dev/null &
         disown
         echo "launched ''${app[*]} (waypipe pid $!); logs: $log" >&2
+      '';
+
+      # `vm chat`: bring up the private LLM chat stack end to end.
+      #
+      #   host   llama-server on 127.0.0.1:8443 (TLS, private CA, API key)
+      #   guest  SillyTavern on 127.0.0.1:8000, data on the LUKS home
+      #   host   zen surfaced over waypipe, pointed at the guest's loopback
+      #
+      # Nothing here names a model, a quant or a template: all of that comes
+      # from ~/.config/local-llm/chat.env, which the private repo's install.sh
+      # writes. This module only knows the shape of the flow.
+      #
+      # Lifetimes differ on purpose. SillyTavern is a child of this command's
+      # SSH session and dies with it (it is not a guest service — no unit, no
+      # socket, nothing left listening in a VM that is meant to be idle). The
+      # host llama-server is deliberately left running: it holds ~22 GB of
+      # weights that cost minutes to re-read, and reusing it across chats is
+      # the whole point. Stop it by hand when done.
+      vmChat = pkgs.writeShellScriptBin "vm-chat" ''
+        set -euo pipefail
+
+        cfg_dir="''${XDG_CONFIG_HOME:-$HOME/.config}/local-llm"
+        env_file="$cfg_dir/chat.env"
+        seed_dir="$cfg_dir/sillytavern-seed"
+        ca_crt="$cfg_dir/tls/ca.crt"
+
+        if [[ ! -f "$env_file" ]]; then
+          echo "missing $env_file" >&2
+          echo "generate it with the private-llm repo's install.sh" >&2
+          exit 1
+        fi
+        set -a
+        # shellcheck disable=SC1090
+        . "$env_file"
+        set +a
+
+        llm_port="''${LOCAL_LLM_PORT:-8443}"
+        guest_port="''${CHAT_GUEST_PORT:-8000}"
+        guest_xdg="''${CHAT_GUEST_XDG_DATA_HOME:-/home/${vmUser}/.local/share}"
+        guest_ca=/var/lib/private-vm/local-llm-ca.crt
+        st_data="$guest_xdg/SillyTavern/data/default-user"
+
+        export LIMA_HOME="${limaHome}"
+        ssh_cfg="$LIMA_HOME/private-vm/ssh.config"
+
+        # A ${vmUser}-owned control master, exactly as vm-ssh uses: Lima's
+        # ssh.config bakes User=nixos plus a shared ControlPath, so a bare
+        # `-l ${vmUser}` would multiplex over the nixos channel.
+        guest() {
+          ssh -F "$ssh_cfg" -l ${vmUser} \
+            -o ControlPath="$LIMA_HOME/private-vm/ssh-${vmUser}.sock" \
+            -o ControlMaster=auto -o ControlPersist=600 \
+            lima-private-vm "$@"
+        }
+
+        # --- host inference ---------------------------------------------
+        # local-llm-server comes from the local-llm home-manager module, which
+        # is installed per-host; resolve it off PATH rather than coupling the
+        # two modules.
+        if ! ${pkgs.lsof}/bin/lsof -nP -iTCP:"$llm_port" -sTCP:LISTEN >/dev/null 2>&1; then
+          if ! command -v local-llm-server >/dev/null 2>&1; then
+            echo "local-llm-server not on PATH — is the local-llm module enabled on this host?" >&2
+            exit 1
+          fi
+          log="''${TMPDIR:-/tmp/}"; log="''${log%/}/local-llm-server.log"
+          echo "starting llama-server (first load reads ~22 GB; this takes a minute)…" >&2
+          nohup local-llm-server >"$log" 2>&1 </dev/null &
+          disown
+        fi
+
+        # /health is unauthenticated; --cacert is what proves the TLS chain.
+        echo -n "waiting for https://127.0.0.1:$llm_port/health " >&2
+        ready=0
+        for _ in $(seq 1 300); do
+          if ${pkgs.curl}/bin/curl -fsS --cacert "$ca_crt" \
+               "https://127.0.0.1:$llm_port/health" >/dev/null 2>&1; then
+            ready=1
+            break
+          fi
+          echo -n . >&2
+          sleep 1
+        done
+        echo >&2
+        if [[ "$ready" -ne 1 ]]; then
+          echo "llama-server never became healthy on 127.0.0.1:$llm_port" >&2
+          echo "check ''${TMPDIR:-/tmp/}local-llm-server.log" >&2
+          exit 1
+        fi
+
+        # --- guest ------------------------------------------------------
+        "${vmStart}/bin/vm-start"
+        "${vmUnlock}/bin/vm-unlock"
+
+        if ! guest "test -f $guest_ca" 2>/dev/null; then
+          echo "guest is missing $guest_ca — run 'vm rebuild' first" >&2
+          exit 1
+        fi
+
+        # First-run seed only. SillyTavern's own default-content pass skips any
+        # file already present, so a pre-placed settings.json survives startup;
+        # re-seeding a live data dir would silently revert the user's own
+        # settings, hence the existence guard.
+        if [[ -d "$seed_dir" ]] && ! guest "test -d '$st_data'" 2>/dev/null; then
+          echo "seeding SillyTavern connection profile…" >&2
+          guest "mkdir -p '$st_data'"
+          for f in settings.json secrets.json; do
+            [[ -f "$seed_dir/$f" ]] || continue
+            scp -q -F "$ssh_cfg" -o User=${vmUser} \
+              -o ControlPath="$LIMA_HOME/private-vm/ssh-${vmUser}.sock" \
+              "$seed_dir/$f" "lima-private-vm:$st_data/$f"
+          done
+          guest "chmod 600 '$st_data/secrets.json' 2>/dev/null || true"
+        fi
+
+        # SillyTavern is run ad-hoc rather than installed. `nixpkgs` is pinned
+        # in the guest's flake registry (hosts/private-vm/full.nix), so this
+        # resolves to the flake.lock revision and substitutes from the binary
+        # cache — the first run pays a download, later ones do not.
+        #
+        # Two environment details matter. The nixpkgs build forces SillyTavern's
+        # *global* mode, in which --dataRoot and --configPath are ignored and the
+        # paths come from $XDG_DATA_HOME/SillyTavern — so pinning XDG_DATA_HOME
+        # is what keeps chat history on the encrypted home. And Node reads
+        # NODE_EXTRA_CA_CERTS once at startup; without it the outbound TLS call
+        # to host.private fails certificate verification.
+        #
+        # -tt forces a TTY so that closing this session hangs up the remote
+        # process group: that is what makes SillyTavern die with `vm chat`.
+        echo "starting SillyTavern in the guest on 127.0.0.1:$guest_port…" >&2
+        ssh -tt -F "$ssh_cfg" -l ${vmUser} \
+          -o ControlPath=none -o RequestTTY=force \
+          lima-private-vm \
+          env \
+            PATH="/etc/profiles/per-user/${vmUser}/bin:/home/${vmUser}/.nix-profile/bin:/run/current-system/sw/bin:/usr/bin:/bin" \
+            XDG_DATA_HOME="$guest_xdg" \
+            NODE_EXTRA_CA_CERTS="$guest_ca" \
+            nix run nixpkgs#sillytavern -- --port "$guest_port" &
+        st_pid=$!
+
+        cleanup() {
+          echo >&2
+          echo "stopping SillyTavern…" >&2
+          kill "$st_pid" 2>/dev/null || true
+          wait "$st_pid" 2>/dev/null || true
+          # The SIGHUP from the closed TTY normally reaps it; this catches the
+          # case where `nix run`'s child outlived its parent.
+          guest "pkill -u \$(id -u) -f 'sillytavern' 2>/dev/null; true" >/dev/null 2>&1 || true
+          echo "llama-server is still running on 127.0.0.1:$llm_port (stop it with: pkill -f llama-server)" >&2
+        }
+        trap cleanup EXIT INT TERM
+
+        echo -n "waiting for the guest to listen on $guest_port " >&2
+        ready=0
+        for _ in $(seq 1 180); do
+          if ! kill -0 "$st_pid" 2>/dev/null; then
+            echo >&2
+            echo "SillyTavern exited before it started listening" >&2
+            exit 1
+          fi
+          if guest "ss -ltnH 'sport = :$guest_port' | grep -q ." 2>/dev/null; then
+            ready=1
+            break
+          fi
+          echo -n . >&2
+          sleep 1
+        done
+        echo >&2
+        if [[ "$ready" -ne 1 ]]; then
+          echo "guest never listened on $guest_port" >&2
+          exit 1
+        fi
+
+        "${vmGui}/bin/vm-gui" zen "http://127.0.0.1:$guest_port"
+
+        echo >&2
+        echo "chat is up. Ctrl-C here to close SillyTavern." >&2
+        wait "$st_pid"
       '';
 
       vmGuiReset = pkgs.writeShellScriptBin "vm-gui-reset" ''
@@ -905,6 +1100,7 @@
           ssh)          exec "${vmSsh}/bin/vm-ssh" "$@" ;;
           rebuild)      exec "${vmRebuild}/bin/vm-rebuild" "$@" ;;
           gui)          exec "${vmGui}/bin/vm-gui" "$@" ;;
+          chat)         exec "${vmChat}/bin/vm-chat" "$@" ;;
           gui-status)   exec "${vmGuiStatus}/bin/vm-gui-status" "$@" ;;
           gui-reset)    exec "${vmGuiReset}/bin/vm-gui-reset" "$@" ;;
           lock)         exec "${vmLock}/bin/vm-lock" "$@" ;;
@@ -924,6 +1120,7 @@
             echo "  rebuild        deploy NixOS config to the VM" >&2
             echo "  ssh [args]     open a shell or run a command in the VM" >&2
             echo "  gui [app]      surface a guest GUI app via cocoa-way+waypipe (default: firefox)" >&2
+            echo "  chat           open the private LLM chat stack (llama-server + SillyTavern + zen)" >&2
             echo "  gui-status     show cocoa-way/waypipe host+guest process state" >&2
             echo "  gui-reset      hard-reset the GUI stack when it hangs (closes all guest windows)" >&2
             echo "  lock           unmount and close the encrypted home volume" >&2

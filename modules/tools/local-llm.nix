@@ -6,6 +6,31 @@
       cfgDir = "\${XDG_CONFIG_HOME:-$HOME/.config}/local-llm";
       tlsDir = "${cfgDir}/tls";
       apiFile = "${cfgDir}/api-keys.txt";
+      # Written by the private-llm repo's install.sh. Names the model, the
+      # chat template and the context size — i.e. everything personal. This
+      # repo is public, so none of that is hardcoded here; the wrapper reads
+      # the file and fails loudly if it is missing.
+      envFile = "${cfgDir}/chat.env";
+
+      # Shared prelude, sourced by both wrappers: load chat.env, require the
+      # keys we use, and export LLAMA_CACHE so llama.cpp's -hf resolution
+      # reads the model cache under ~/data instead of ~/.cache.
+      loadEnv = pkgs.writeText "local-llm-load-env.sh" ''
+        env_file="${envFile}"
+        if [[ ! -f "$env_file" ]]; then
+          echo "missing $env_file" >&2
+          echo "run the private-llm repo's install.sh to generate it" >&2
+          exit 1
+        fi
+        set -a
+        # shellcheck disable=SC1090
+        . "$env_file"
+        set +a
+
+        : "''${LOCAL_LLM_HF:?LOCAL_LLM_HF unset in $env_file}"
+        : "''${LOCAL_LLM_CACHE:?LOCAL_LLM_CACHE unset in $env_file}"
+        export LLAMA_CACHE="$LOCAL_LLM_CACHE"
+      '';
 
       localLlmInit = pkgs.writeShellApplication {
         name = "local-llm-init";
@@ -114,9 +139,14 @@
             Server cert: $tls_dir/server.crt
             Server key:  $tls_dir/server.key
             API keys:    $api_file
+            chat.env:    ${envFile}
+
+          Fetch the pinned model:
+            local-llm-fetch
 
           Start:
-            local-llm-server /path/to/model.gguf
+            local-llm-server               # model + template from chat.env
+            local-llm-server /path/to.gguf # override with an explicit file
 
           Show API key:
             sed -n '1p' "$api_file"
@@ -127,6 +157,51 @@
             echo "Missing one or more files; run local-llm-init first."
             exit 1
           fi
+        '';
+      };
+
+      # Fetch (or verify) the pinned GGUF into LOCAL_LLM_CACHE. Separate from
+      # the server so the multi-GB download is an explicit, resumable step and
+      # the server can then run with --offline. `llama download` also pulls the
+      # mmproj sidecar when the repo has one (Qwen3.8 does).
+      localLlmFetch = pkgs.writeShellApplication {
+        name = "local-llm-fetch";
+        runtimeInputs = with pkgs; [
+          coreutils
+          llama-cpp
+        ];
+        text = ''
+          set -euo pipefail
+
+          # shellcheck source=/dev/null
+          . ${loadEnv}
+
+          mkdir -p "$LLAMA_CACHE"
+
+          echo "fetching $LOCAL_LLM_HF into $LLAMA_CACHE" >&2
+          llama download -hf "$LOCAL_LLM_HF"
+
+          # Verify against the pin in the private-llm repo's model.lock, which
+          # install.sh copied into chat.env. Skipped when unset.
+          if [[ -n "''${LOCAL_LLM_SHA256:-}" ]]; then
+            gguf=$(find "$LLAMA_CACHE" -name '*.gguf' ! -name '*mmproj*' -type f \
+              -exec ls -S {} + | head -1)
+            if [[ -z "$gguf" ]]; then
+              echo "no .gguf found under $LLAMA_CACHE after download" >&2
+              exit 1
+            fi
+            echo "verifying $gguf" >&2
+            have=$(sha256sum "$gguf" | cut -d' ' -f1)
+            if [[ "$have" != "$LOCAL_LLM_SHA256" ]]; then
+              echo "sha256 mismatch for $gguf" >&2
+              echo "  expected: $LOCAL_LLM_SHA256" >&2
+              echo "  actual:   $have" >&2
+              exit 1
+            fi
+            echo "sha256 ok" >&2
+          fi
+
+          echo "model ready; start it with: local-llm-server" >&2
         '';
       };
 
@@ -149,11 +224,8 @@
             shift
           fi
 
-          if [[ -z "$model" ]]; then
-            echo "usage: local-llm-server /path/to/model.gguf [extra llama-server args]" >&2
-            echo "   or: LOCAL_LLM_MODEL=/path/to/model.gguf local-llm-server [extra args]" >&2
-            exit 2
-          fi
+          # shellcheck source=/dev/null
+          . ${loadEnv}
 
           for path in "$tls_dir/server.crt" "$tls_dir/server.key" "$api_file"; do
             if [[ ! -f "$path" ]]; then
@@ -162,13 +234,65 @@
             fi
           done
 
+          # Model selection: an explicit path (argv or LOCAL_LLM_MODEL) wins,
+          # otherwise the pinned -hf spec resolved out of the local cache.
+          # --offline makes that resolution read-only: llama.cpp never reaches
+          # the network, so an unfetched or evicted model is a hard error here
+          # rather than a silent multi-GB download. Run local-llm-fetch first.
+          if [[ -n "$model" ]]; then
+            model_args=( --model "$model" )
+          else
+            model_args=( --hf-repo "$LOCAL_LLM_HF" )
+          fi
+
+          # Chat template: the stock Qwen3.8 template is broken multi-turn
+          # (it prepends empty <think></think> blocks to real history and
+          # hardcodes xhigh reasoning effort). The pinned replacement lives
+          # with the model pin in the private-llm repo.
+          template_args=()
+          if [[ -n "''${LOCAL_LLM_CHAT_TEMPLATE:-}" ]]; then
+            if [[ ! -f "$LOCAL_LLM_CHAT_TEMPLATE" ]]; then
+              echo "missing chat template: $LOCAL_LLM_CHAT_TEMPLATE" >&2
+              exit 1
+            fi
+            template_args=( --jinja --chat-template-file "$LOCAL_LLM_CHAT_TEMPLATE" )
+          fi
+
+          alias_args=()
+          if [[ -n "''${LOCAL_LLM_ALIAS:-}" ]]; then
+            alias_args=( --alias "$LOCAL_LLM_ALIAS" )
+          fi
+
+          # Thinking default. Per-request overrides still work: the fixed
+          # template honours enable_thinking / reasoning_effort kwargs, so a
+          # frontend can turn it back on for a single completion.
+          reasoning_args=()
+          if [[ -n "''${LOCAL_LLM_REASONING:-}" ]]; then
+            reasoning_args=( --reasoning "$LOCAL_LLM_REASONING" )
+          fi
+
+          # Privacy posture (decision 2): loopback bind only, TLS with the
+          # private CA, API key required, no network egress, no web UI, no
+          # logs, and no prompt state written to disk --
+          #   --cache-ram 0            no host-RAM prompt cache
+          #   --ctx-checkpoints 0      no context checkpoints
+          #   --no-cache-idle-slots    idle slots drop their KV instead of
+          #                            being spilled
           exec llama-server \
-            --model "$model" \
+            "''${model_args[@]}" \
+            "''${alias_args[@]}" \
+            "''${template_args[@]}" \
+            "''${reasoning_args[@]}" \
             --host 127.0.0.1 \
             --port "$port" \
             --ssl-key-file "$tls_dir/server.key" \
             --ssl-cert-file "$tls_dir/server.crt" \
             --api-key-file "$api_file" \
+            --ctx-size "''${LOCAL_LLM_CTX:-65536}" \
+            --flash-attn on \
+            --cache-type-k q8_0 \
+            --cache-type-v q8_0 \
+            --reasoning-format deepseek \
             --cache-ram 0 \
             --ctx-checkpoints 0 \
             --no-cache-idle-slots \
@@ -178,12 +302,14 @@
             "$@"
         '';
       };
+
     in
     lib.mkIf pkgs.stdenv.isDarwin {
       home.packages = [
         pkgs.llama-cpp
         localLlmInit
         localLlmInfo
+        localLlmFetch
         localLlmServer
       ];
     };

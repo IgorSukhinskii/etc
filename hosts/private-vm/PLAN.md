@@ -208,6 +208,46 @@ ssh -F "$lima_home/private-vm/ssh.config" lima-private-vm   # shell as nixos (op
 lsof -iTCP:3389 -sTCP:LISTEN     # RDP tunnel up?
 ```
 
+## Private LLM path
+
+`vm chat` opens a chat UI in the guest against a private inference server on the
+Mac. The guest never runs inference — there is no GPU passthrough under qemu on
+Darwin, so the weights stay on the host's Metal backend and the VM is a client.
+
+```
+zen (host window, waypipe)  ->  SillyTavern  ->  https://host.private:8443/v1
+        cocoa-way               guest :8000        llama-server, host loopback
+```
+
+Shape:
+
+- **Inference** — `local-llm-server` (`modules/tools/local-llm.nix`) binds
+  `127.0.0.1:8443` only, behind TLS from a private CA and an API key file, with
+  `--offline` and no on-disk prompt state (`--cache-ram 0 --ctx-checkpoints 0
+  --no-cache-idle-slots --log-disable`). `192.168.5.2` is the host as seen from
+  Lima's user-mode NAT; `full.nix` maps it to `host.private`.
+- **CA trust** — `vm rebuild` pushes `~/.config/local-llm/tls/ca.crt` to
+  `/var/lib/private-vm/local-llm-ca.crt`. Deliberately a runtime push, not
+  `security.pki.certificateFiles`: that option reads the file at eval time, which
+  would break pure evaluation of `nixosConfigurations.private-vm` inside the VM.
+  Consumers point `NODE_EXTRA_CA_CERTS` (Node) or `--cacert` (curl) at it.
+- **Frontend** — SillyTavern, run ad-hoc via `nix run nixpkgs#sillytavern`, not
+  installed in `full.nix`. It is a child of the `vm chat` SSH session and dies
+  with it: no unit, nothing listening in an otherwise idle VM. `nix.registry`
+  pins `nixpkgs` to this flake's locked input so that run is deterministic and
+  hits the binary cache.
+- **State** — chat history lands on the LUKS home. SillyTavern's nixpkgs build
+  forces *global* mode, where `--dataRoot` is ignored and the path comes from
+  `$XDG_DATA_HOME/SillyTavern`, so `vm chat` pins `XDG_DATA_HOME` instead.
+- **Personal config** — the model pin, quant, chat template and connection seed
+  are *not* in this repo. They live in a private repo whose `install.sh` writes
+  `~/.config/local-llm/chat.env`; `local-llm-server` and `vm chat` both read it
+  and fail loudly when it is absent.
+
+Lifetimes are asymmetric on purpose: `vm chat` stops SillyTavern on exit but
+leaves `llama-server` running, because re-reading ~22 GB of weights costs minutes
+and reuse across chats is the point.
+
 ## Known gotchas
 
 - **`.git/objects` permission errors after `nix-rebuild`** — `sudo darwin-rebuild` occasionally creates a git object as root in `.git/objects/<hash>/`. Fix: `sudo chown -R $(whoami):staff .git/objects/`.

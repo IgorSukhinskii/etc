@@ -1,5 +1,6 @@
 {
   config,
+  inputs,
   pkgs,
   ...
 }:
@@ -55,6 +56,18 @@ in
     "root"
     user
   ];
+
+  # Pin the guest's `nixpkgs` flake reference to this flake's own locked input.
+  # `vm chat` runs SillyTavern ad-hoc via `nix run nixpkgs#sillytavern` rather
+  # than installing it here (the package name would be a disclosure this repo
+  # is public enough to care about, and the frontend is not a system concern).
+  # Without this pin, `nixpkgs#...` resolves through the global registry to a
+  # floating nixpkgs-unstable: a network fetch on every use, drifting versions,
+  # and near-certain binary-cache misses that turn an ad-hoc run into a local
+  # npm build. Pinned, it resolves to a store path that nixos-rebuild already
+  # placed here, so `nix run` only substitutes the package itself.
+  nix.registry.nixpkgs.flake = inputs.nixpkgs;
+  nix.nixPath = [ "nixpkgs=${inputs.nixpkgs}" ];
 
   environment.systemPackages = with pkgs; [
     # firefox: bring-up/debug browser. The real browser is zen, installed via
