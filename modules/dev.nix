@@ -47,10 +47,10 @@
         enable = true;
         enableZshIntegration = false;
         settings = {
-          git.pagers = [
+          git.diffRenderers = [
             {
               colorArg = "always";
-              pager = "delta --paging=never";
+              command = "delta --paging=never";
             }
           ];
         };
