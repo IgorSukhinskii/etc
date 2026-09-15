@@ -711,7 +711,10 @@
         #
         # -tt forces a TTY so that closing this session hangs up the remote
         # process group: that is what makes SillyTavern die with `vm chat`.
-        echo "starting SillyTavern in the guest on 127.0.0.1:$guest_port…" >&2
+        # Braces are load-bearing: bash in a UTF-8 locale folds the following
+        # multi-byte ellipsis into the variable name, so a bare $guest_port
+        # here expands to an unbound variable and set -u kills the script.
+        echo "starting SillyTavern in the guest on 127.0.0.1:''${guest_port}…" >&2
         ssh -tt -F "$ssh_cfg" -l ${vmUser} \
           -o ControlPath=none -o RequestTTY=force \
           lima-private-vm \

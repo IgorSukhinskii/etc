@@ -184,7 +184,10 @@
           # Verify against the pin in the private-llm repo's model.lock, which
           # install.sh copied into chat.env. Skipped when unset.
           if [[ -n "''${LOCAL_LLM_SHA256:-}" ]]; then
-            gguf=$(find "$LLAMA_CACHE" -name '*.gguf' ! -name '*mmproj*' -type f \
+            # -L is load-bearing: the HF cache layout stores blobs under
+            # blobs/<sha256> and exposes the .gguf names as symlinks into it,
+            # so an unfollowed -type f search matches nothing at all.
+            gguf=$(find -L "$LLAMA_CACHE" -name '*.gguf' ! -name '*mmproj*' -type f \
               -exec ls -S {} + | head -1)
             if [[ -z "$gguf" ]]; then
               echo "no .gguf found under $LLAMA_CACHE after download" >&2
