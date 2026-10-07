@@ -32,7 +32,10 @@
           "windows-app"
           "steam"
           "spotify"
-          "t3-code"
+          # Nightly on purpose: the IGORS-DEV1 server runs nightly and the client
+          # must speak the same protocol. Both T3 casks zap ~/.t3/userdata, so
+          # swap channels by uninstalling one without --zap first.
+          "t3-code@nightly"
         ];
       };
     };
