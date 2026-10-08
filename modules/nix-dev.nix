@@ -129,9 +129,13 @@
           nixDarwinModule
         ];
 
+      # Only into a real clone: on a fresh machine a stub .git here would make
+      # the first `git clone … ~/etc` fail. The rebuild after cloning installs it.
       home.activation.installNixfmtHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        $DRY_RUN_CMD mkdir -p "${flakeDir}/.git/hooks"
-        $DRY_RUN_CMD ln -sf ${nixfmtHook} "${flakeDir}/.git/hooks/pre-commit"
+        if [ -f "${flakeDir}/.git/HEAD" ]; then
+          $DRY_RUN_CMD mkdir -p "${flakeDir}/.git/hooks"
+          $DRY_RUN_CMD ln -sf ${nixfmtHook} "${flakeDir}/.git/hooks/pre-commit"
+        fi
       '';
     };
 }
