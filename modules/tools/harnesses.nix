@@ -27,19 +27,25 @@
       };
 
       # binDir first: the installers then find PATH already set up and leave
-      # the home-manager-owned shell profiles alone.
+      # the home-manager-owned shell profiles alone. util-linux for flock:
+      # without it the codex installer locks with a directory that an
+      # interrupted install leaves behind, and the next activation waits on it
+      # past home-manager's 5-minute timeout.
       installPath = "${binDir}:${
-        lib.makeBinPath [
-          pkgs.bash
-          pkgs.curl
-          pkgs.coreutils
-          pkgs.findutils
-          pkgs.gnugrep
-          pkgs.gnused
-          pkgs.gawk
-          pkgs.gnutar
-          pkgs.gzip
-        ]
+        lib.makeBinPath (
+          [
+            pkgs.bash
+            pkgs.curl
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.gnugrep
+            pkgs.gnused
+            pkgs.gawk
+            pkgs.gnutar
+            pkgs.gzip
+          ]
+          ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.util-linux
+        )
       }:/usr/bin:/bin";
     in
     {
