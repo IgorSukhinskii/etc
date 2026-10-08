@@ -34,6 +34,8 @@ in
     users.users.${username} = {
       extraGroups = [ "docker" ];
       shell = pkgs.zsh;
+      # User services (t3, see t3.nix) run without a login session.
+      linger = true;
     };
 
     # Allow unpatched ELF binaries (ad-hoc downloaded CLIs)

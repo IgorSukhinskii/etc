@@ -13,8 +13,12 @@
           "base"
           "ai"
         ];
-        # WSL-singular terminal (writes wezterm.lua to the Windows side).
-        extra = [ ./wezterm.nix ];
+        # WSL-singular: the terminal (writes wezterm.lua to the Windows side) and
+        # the t3 server.
+        extra = [
+          ./wezterm.nix
+          ./t3.nix
+        ];
       })
     ];
     specialArgs = { inherit inputs; };
