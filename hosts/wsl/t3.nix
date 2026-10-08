@@ -23,7 +23,9 @@ let
   unitDir = "${config.xdg.configHome}/systemd/user";
   port = 3775;
 
+  # The installer is piped into `sh`.
   installPath = lib.makeBinPath [
+    pkgs.bash
     pkgs.curl
     pkgs.coreutils
     pkgs.findutils
@@ -46,11 +48,12 @@ in
       Environment=T3CODE_PORT=${toString port}
       Environment=T3CODE_TELEMETRY_ENABLED=false
     '';
-    # try-restart: only if it is already running, so a first install is left
-    # to the activation below.
+    # Only if it is running: a first install is left to the activation below.
     onChange = ''
       ${systemctl} daemon-reload || true
-      ${systemctl} try-restart t3code.service || true
+      if ${systemctl} is-active --quiet t3code.service; then
+        ${systemctl} restart t3code.service || true
+      fi
     '';
   };
 
