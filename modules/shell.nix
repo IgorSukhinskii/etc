@@ -6,6 +6,11 @@
       xdg.enable = true;
       home.preferXdgDirectories = true;
 
+      # Where vendor installers put their launchers (claude, codex, t3). They
+      # update themselves there, which is why they are not nix packages; see
+      # modules/tools/harnesses.nix.
+      home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
+
       home.shell.enableZshIntegration = true;
 
       home.shellAliases = {

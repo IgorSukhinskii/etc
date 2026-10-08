@@ -23,11 +23,7 @@
       "themes"
     ];
     ai = [
-      "agentSkills"
-      "claude"
-      "codex"
-      "opencode"
-      "playwright"
+      "harnesses"
     ];
     # `zen-browser` is the external module (inputs.zen-browser.homeModules.beta),
     # registered into flake.homeManagerModules during the zen surgery (Phase 4);

@@ -2,6 +2,10 @@
 
 Status: **implemented** (2026-06-20)
 
+*2026-10-08: `ai` is now just `harnesses`: Claude Code and Codex from their vendors' installers (see
+`modules/tools/harnesses.nix`). opencode, playwright and the shared skills tree are gone. The tables
+below are the June design and still list the old modules.*
+
 Notes from implementation (where reality diverged from the plan above):
 - `isDarwin` was consumed by only two HM modules (`zen`, `homebrew`). Swapping a
   whole-module `lib.optionalAttrs pkgs.stdenv.isDarwin` guard caused infinite
