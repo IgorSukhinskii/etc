@@ -30,3 +30,15 @@ content. Works for uninstalled packages.
 ```bash
 nix-rebuild    # rebuilds for current hostname
 ```
+
+## Landing changes
+
+Commit to `main` and push; no feature branches. Every machine pulls `main`, and a
+branch-merge-repull cycle across hosts isn't worth it.
+
+The Mac can't evaluate the Linux hosts (theme IFD needs a Linux builder), so their
+rebuild is the test. Build before switching:
+
+```bash
+cd /tmp && nixos-rebuild build --flake ~/etc#<host>   # then: nix-rebuild
+```
