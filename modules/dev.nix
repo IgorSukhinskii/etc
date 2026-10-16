@@ -75,6 +75,7 @@
           docker
           devenv
           mkcert
+          uv
         ]
         ++ lib.optionals stdenv.isDarwin [ colima ];
     };
