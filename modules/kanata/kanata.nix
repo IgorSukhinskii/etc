@@ -51,12 +51,20 @@
         in
         lib.mkAfter ''
           _missing=""
+          _unreadable=""
           for _svc in kTCCServiceListenEvent kTCCServiceAccessibility; do
-            _auth=$(/usr/bin/sqlite3 "${db}" \
-              "SELECT auth_value FROM access WHERE service='$_svc' AND client='${bin}';" 2>/dev/null)
+            # Reading TCC.db needs Full Disk Access; without it, skip the check
+            # rather than abort the activation (set -e).
+            if ! _auth=$(/usr/bin/sqlite3 "${db}" \
+              "SELECT auth_value FROM access WHERE service='$_svc' AND client='${bin}';" 2>/dev/null); then
+              _unreadable=1
+              break
+            fi
             [ "$_auth" = "2" ] || _missing="$_missing $_svc"
           done
-          if [ -n "$_missing" ]; then
+          if [ -n "$_unreadable" ]; then
+            echo "kanata: TCC grants not checked: this shell cannot read TCC.db (no Full Disk Access)"
+          elif [ -n "$_missing" ]; then
             echo "kanata: MISSING TCC grant(s):$_missing"
             echo "kanata:   binary: ${bin}"
             echo "kanata:   Add it under System Settings -> Privacy & Security ->"
