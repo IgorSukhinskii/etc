@@ -2,14 +2,14 @@
 {
   # Atlassian's Teamwork Graph CLI (Jira, Confluence, Bitbucket; OAuth 2.1),
   # installed like the harnesses: the vendor's installer runs once into
-  # ~/.local/bin and twg then updates itself (`twg update`). Nix only declares
-  # that it is wanted, so new releases don't wait for nixpkgs. Sign-in stays
-  # manual: `twg login` (browser or device code), then `twg setup` for the
-  # background token refresh and its agent skills.
+  # ~/.local/bin. twg's own upkeep only notifies about releases, so a daily
+  # launchd agent runs `twg upgrade --yes`: new releases land without waiting
+  # for nixpkgs or a rebuild. Sign-in stays manual: `twg login`, then
+  # `twg upkeep enable` for the background token refresh. Atlassian's agent
+  # skills (`twg skills install`) are deliberately not installed.
   #
-  # Mac only for now. WSL is meant to call the Windows twg.exe through interop
-  # rather than hold a second login; that shim belongs in hosts/wsl once DEV1's
-  # Windows side has twg.
+  # Mac only. WSL calls the Windows twg.exe instead of holding a second login
+  # (hosts/wsl/twg.nix).
   flake.homeManagerModules.twg =
     {
       pkgs,
@@ -44,5 +44,26 @@
             || warnEcho "twg: install failed (offline?); run nix-rebuild again later"
         fi
       '';
+
+      launchd.agents.twg-upgrade = {
+        enable = true;
+        config = {
+          Label = "local.twg-upgrade";
+          ProgramArguments = [
+            "${binDir}/twg"
+            "upgrade"
+            "--yes"
+          ];
+          EnvironmentVariables.PATH = installPath;
+          StartCalendarInterval = [
+            {
+              Hour = 9;
+              Minute = 25;
+            }
+          ];
+          StandardOutPath = "${config.home.homeDirectory}/Library/Logs/twg-upgrade.log";
+          StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/twg-upgrade.error.log";
+        };
+      };
     };
 }
