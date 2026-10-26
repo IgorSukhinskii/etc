@@ -36,7 +36,6 @@
       "sketchybar"
       "hammerspoon"
       "ical"
-      "jira"
       "twg"
       "openwhispr"
       "tridactyl"
