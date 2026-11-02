@@ -1,7 +1,7 @@
 { ... }:
 {
-  # Hex (github.com/anomalyco/hex): local dictation, trialled as the OpenWhispr
-  # replacement. Its flake packages Linux only, so this takes the signed macOS
+  # Hex (github.com/anomalyco/hex): local dictation; replaced OpenWhispr on
+  # 2026-11-02. Its flake packages Linux only, so this takes the signed macOS
   # release zip. The bundle keeps Anomaly's Developer ID signature (no ad-hoc
   # re-sign), so macOS permission grants survive version bumps. In-app updates
   # can't replace a store path; bump `version` and `hash` here instead.

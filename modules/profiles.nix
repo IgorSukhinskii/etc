@@ -37,7 +37,6 @@
       "hammerspoon"
       "ical"
       "twg"
-      "openwhispr"
       "hex"
       "tridactyl"
       "homebrew"
