@@ -38,6 +38,7 @@
       "ical"
       "twg"
       "openwhispr"
+      "hex"
       "tridactyl"
       "homebrew"
       "terminal"
