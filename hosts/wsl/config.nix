@@ -52,6 +52,25 @@ in
     home-manager.users.${username} = {
       home.stateVersion = stateVersion;
       programs.home-manager.enable = true;
+      # WSL reaches Azure DevOps over SSH only; repositories list submodules
+      # (legacy, src-net) with HTTPS URLs, so rewrite those to SSH.
+      programs.git.settings.url = lib.listToAttrs (
+        map
+          (project: {
+            name = "mirasys@vs-ssh.visualstudio.com:v3/mirasys/${project}/";
+            value.insteadOf = [
+              "https://dev.azure.com/mirasys/${project}/_git/"
+              "https://mirasys@dev.azure.com/mirasys/${project}/_git/"
+              "https://mirasys.visualstudio.com/${project}/_git/"
+              "https://mirasys@mirasys.visualstudio.com/${project}/_git/"
+            ];
+          })
+          [
+            "ADV"
+            "Sandbox"
+            "Extranet"
+          ]
+      );
     };
   };
 }
