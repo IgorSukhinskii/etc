@@ -5,8 +5,11 @@ let
 in
 { lib, pkgs, ... }:
 {
-  # ~/w on the XFS work disk (system level: a mount and a boot unit).
-  imports = [ ./work.nix ];
+  # ~/w on the XFS work disk (a mount and a boot unit); daily cleanup timers.
+  imports = [
+    ./work.nix
+    ./cleanup.nix
+  ];
 
   options.host = {
     username = lib.mkOption { type = lib.types.str; };
