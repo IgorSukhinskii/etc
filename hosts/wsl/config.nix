@@ -5,6 +5,9 @@ let
 in
 { lib, pkgs, ... }:
 {
+  # ~/w on the XFS work disk (system level: a mount and a boot unit).
+  imports = [ ./work.nix ];
+
   options.host = {
     username = lib.mkOption { type = lib.types.str; };
     homeDirectory = lib.mkOption { type = lib.types.path; };

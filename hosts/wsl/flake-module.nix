@@ -14,12 +14,11 @@
           "ai"
         ];
         # WSL-singular: the terminal (writes wezterm.lua to the Windows side),
-        # the t3 server, twg (calls the Windows twg.exe), and ~/w on the XFS work disk.
+        # the t3 server, and twg (calls the Windows twg.exe).
         extra = [
           ./wezterm.nix
           ./t3.nix
           ./twg.nix
-          ./work.nix
         ];
       })
     ];
